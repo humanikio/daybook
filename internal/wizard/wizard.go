@@ -108,7 +108,12 @@ func Run(force bool) error {
 			v = "version unknown"
 		}
 		ok("claude found — %s", v)
-		note("narration (v2) will use the account you are already signed in with")
+		// Deliberately does NOT claim you are signed in. `claude doctor` exits 0
+		// regardless of credential state, so sign-in cannot be checked here
+		// without burning a real request. Detection is reactive: narration
+		// reports it, and the message has to be good because that is the only
+		// place anyone finds out.
+		note("sign-in not verified here — narration will say so if it needs a login")
 	} else {
 		warn("claude not found on PATH — narration will be unavailable")
 		note("the deterministic report does not need it; everything else works")
