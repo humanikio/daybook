@@ -1,0 +1,56 @@
+# daybook config. Precedence: env vars > this file > built-in defaults.
+#
+# Every string is quoted on purpose. Under YAML 1.1 an unquoted 12:00 is
+# the integer 43200, NO is false, and 010 is 8.
+
+watch:
+  agents:
+    - { source: "claude-code", path: "~/.claude/projects" }
+  repos:
+    - { path: "~/code", depth: 4 }
+  # `git push` updates the local tracking ref, so the unpushed count is
+  # already right for anything sent from this machine. Turn this on only
+  # to notice pushes made somewhere else; it costs a round trip per repo.
+  fetch: false
+  ignore: []
+
+window:
+  length: "24h"
+  # window  — report only messages inside the window (a week-old session
+  #           contributes today's work, not its whole history)
+  # session — report the entire session, every day it is active
+  scope: "window"
+  stale_after: "120h"
+
+schedule:
+  at: "23:30"
+  days: []            # empty = every day
+  catch_up: true         # asleep at `at`? run on wake rather than skip the day
+
+identity:
+  authors: ["you@example.com"]
+  machine: ""          # empty = hostname; namespaces output files
+
+output:
+  root: "~/.daybook"
+  # The bar for repos with no remote, where "shipped" is undefined.
+  no_remote: committed      # committed | exclude
+
+narrate:
+  enabled: false      # v2. uses the claude you are already signed in with
+  binary: ""
+  timeout: "5m"
+
+privacy:
+  # Redaction runs before anything reaches disk. Prompts carry pasted
+  # secrets far more often than people expect.
+  keep_raw_prompts: true
+  redact:
+    - { name: "aws-access-key", pattern: "AKIA[0-9A-Z]{16}" }
+    - { name: "bearer-token", pattern: "sk-[A-Za-z0-9_-]{20,}" }
+    - { name: "github-token", pattern: "gh[pousr]_[A-Za-z0-9]{20,}" }
+    - { name: "private-key", pattern: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }
+
+# Group repos into businesses for the shipped-to table. Optional.
+# business:
+#   - { name: "Acme", repos: ["acme-*", "acme"] }
