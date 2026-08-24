@@ -1,0 +1,23 @@
+# Derived output. Contains prompt text, file paths and repo names.
+# Never commit this — see docs/privacy.md
+data/
+
+# Local overrides of the example config
+daybook.local.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Go
+/daybook
+/dist/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
