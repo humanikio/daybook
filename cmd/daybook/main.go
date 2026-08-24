@@ -139,6 +139,12 @@ func cmdScan(args []string) error {
 		fmt.Print(render.Markdown(day, cfg))
 		return nil
 	}
+	// scan rebuilds the day from source every time, which would throw away
+	// prose already written for it — and `scan` is documented as safe to run as
+	// often as you like. Carry the narration across by stream id so re-scanning
+	// refreshes the facts without costing the words.
+	carryNarration(cfg, &day)
+
 	// The deterministic report is written FIRST, unconditionally. Narration
 	// then rewrites both files from the same facts. Nothing a model does can
 	// cost you the day.
@@ -153,6 +159,33 @@ func cmdScan(args []string) error {
 		return narrateDay(cfg, &day)
 	}
 	return nil
+}
+
+// carryNarration copies prose from a previous scan of the SAME day onto the
+// freshly derived streams.
+//
+// Only by stream id, and only where the stream still exists: a stream whose
+// facts changed keeps its prose (the words describe work that still happened),
+// but one that vanished takes its prose with it rather than being resurrected.
+func carryNarration(cfg config.Config, day *model.Day) {
+	prev, err := loadDay(cfg, day.Date)
+	if err != nil {
+		return
+	}
+	byID := map[string]*model.Narration{}
+	for i := range prev.Streams {
+		if prev.Streams[i].Narration != nil {
+			byID[prev.Streams[i].ID] = prev.Streams[i].Narration
+		}
+	}
+	for i := range day.Streams {
+		if n, ok := byID[day.Streams[i].ID]; ok {
+			day.Streams[i].Narration = n
+		}
+	}
+	day.Narration = prev.Narration
+	day.ClosedToday = prev.ClosedToday
+	day.OpenItems = ledger.Open(ledger.Load(cfg))
 }
 
 // writeDay puts the facts down before the prose, always in that order.
