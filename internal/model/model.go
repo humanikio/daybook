@@ -137,10 +137,89 @@ type Stream struct {
 	Commits []Commit `json:"commits,omitempty"`
 	State   State    `json:"state"`
 
+	// Narration is nil whenever narration is off, unavailable, or refused by
+	// the verification gate. The report is complete without it.
+	Narration *Narration `json:"narration,omitempty"`
+
 	// CarryForward is one line of context for tomorrow's report, so a long
 	// stream keeps its thread without re-reading its whole history. Written by
 	// the narration pass; empty in v1.
 	CarryForward string `json:"carryForward,omitempty"`
+}
+
+// Narration is what a model adds to a stream that the deterministic layer
+// structurally cannot produce.
+//
+// FIELDS, NOT PROSE. The model fills these; the renderer owns the document.
+// A bad field is then a missing line rather than a mangled report, and each one
+// can be verified on its own. It also stops the single most common failure of
+// summarising structured data — reading the table back as sentences — because
+// there is nowhere in this shape to put a commit count.
+type Narration struct {
+	// Intent — one sentence. What you were trying to do.
+	Intent string `json:"intent"`
+	// Happened — what was done, found, built, broke. Drawn mostly from the
+	// assistant's side of the conversation, which is where the substance is.
+	Happened string `json:"happened"`
+	// Decisions — choices made that no commit records. On a day of design work
+	// this is the entire output, and it exists nowhere else.
+	Decisions []string `json:"decisions,omitempty"`
+	// Open — work already done that has not finished proving itself.
+	Open []string `json:"open,omitempty"`
+	// CarryForward — one line, becomes tomorrow's "previously" so a long stream
+	// keeps its thread without re-reading its own history.
+	CarryForward string `json:"carryForward,omitempty"`
+}
+
+// DayNarration is the synthesis pass, run over the per-stream summaries only —
+// never over raw transcripts.
+type DayNarration struct {
+	Shape    string `json:"shape"`
+	Moved    string `json:"moved"`
+	Carrying string `json:"carrying"`
+}
+
+// Evidence is why an open item was closed.
+//
+// Required. A close with no citable evidence is refused and the item stays
+// open — otherwise the ledger quietly empties itself and stops meaning
+// anything.
+type Evidence struct {
+	Kind  string `json:"kind"` // commit | session | manual
+	Repo  string `json:"repo,omitempty"`
+	SHA   string `json:"sha,omitempty"`
+	Quote string `json:"quote,omitempty"`
+}
+
+// OpenItem is one entry in the running ledger.
+//
+// Append-only: nothing is ever deleted, items change status. Regenerating the
+// list nightly would silently drop anything raised on Monday and untouched on
+// Tuesday — which is precisely the set that rots.
+type OpenItem struct {
+	ID       string    `json:"id"`
+	Text     string    `json:"text"`
+	Stream   string    `json:"stream"`
+	StreamID string    `json:"streamId"`
+	Repos    []string  `json:"repos,omitempty"`
+	Opened   string    `json:"opened"`
+	LastSeen string    `json:"lastSeen"`
+	Status   string    `json:"status"` // open | closed
+	Closed   string    `json:"closed,omitempty"`
+	ClosedBy *Evidence `json:"closedBy,omitempty"`
+}
+
+// Age in whole days at the given date.
+func (o OpenItem) Age(on time.Time) int {
+	t, err := time.Parse("2006-01-02", o.Opened)
+	if err != nil {
+		return 0
+	}
+	d := int(on.Sub(t).Hours() / 24)
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // RepoState is the working-tree standing of one repository.
@@ -189,6 +268,14 @@ type Day struct {
 
 	Repos  []RepoState `json:"repos,omitempty"`
 	Totals Totals      `json:"totals"`
+
+	Narration *DayNarration `json:"dayNarration,omitempty"`
+
+	// OpenItems is the ledger as it stands after this day; ClosedToday is what
+	// this run closed, printed with its evidence so a wrong close is visible
+	// and reversible rather than silent.
+	OpenItems   []OpenItem `json:"openItems,omitempty"`
+	ClosedToday []OpenItem `json:"closedToday,omitempty"`
 
 	// ParseErrors counts transcript lines that could not be read. The format is
 	// undocumented and moves between Claude Code versions, so this is expected

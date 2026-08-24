@@ -83,9 +83,24 @@ type Output struct {
 }
 
 type Narrate struct {
-	Enabled bool   `yaml:"enabled"`
-	Binary  string `yaml:"binary"`
-	Timeout string `yaml:"timeout"`
+	Enabled bool `yaml:"enabled"`
+	// Provider resolves which backend writes the prose.
+	//
+	//   auto — claude CLI if it works, else the API if credentials resolve,
+	//          else off. The default.
+	//   cli  — always the CLI. Uses the login already on this machine and
+	//          spends that subscription's quota.
+	//   api  — always the Anthropic API.
+	//   off  — never narrate.
+	//
+	// "off" is not a degraded mode. The deterministic report is the product;
+	// narration is a layer on top of a file that is already written.
+	Provider string `yaml:"provider"`
+	Binary   string `yaml:"binary"`
+	Model    string `yaml:"model"`
+	Timeout  string `yaml:"timeout"`
+	// Concurrency bounds parallel per-stream calls.
+	Concurrency int `yaml:"concurrency"`
 }
 
 type Redaction struct {
@@ -159,7 +174,7 @@ func Default() Config {
 		Window:   Window{Length: "24h", Scope: "window", StaleAfter: "120h"},
 		Schedule: Schedule{At: "23:30", CatchUp: true},
 		Output:   Output{Root: "~/.daybook", NoRemote: "committed"},
-		Narrate:  Narrate{Enabled: false, Timeout: "5m"},
+		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
 		Privacy: Privacy{
 			KeepRawPrompts: true,
 			Redact: []Redaction{
@@ -246,6 +261,16 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("output.no_remote: want \"committed\" or \"exclude\", got %q", c.Output.NoRemote)
 	}
+	switch c.Narrate.Provider {
+	case "", "auto", "cli", "api", "off":
+	default:
+		return fmt.Errorf("narrate.provider: want auto|cli|api|off, got %q", c.Narrate.Provider)
+	}
+	if c.Narrate.Timeout != "" {
+		if _, err := time.ParseDuration(c.Narrate.Timeout); err != nil {
+			return fmt.Errorf("narrate.timeout: %w", err)
+		}
+	}
 	if c.Schedule.At != "" {
 		if _, err := time.Parse("15:04", c.Schedule.At); err != nil {
 			return fmt.Errorf("schedule.at: want a quoted \"HH:MM\", got %q", c.Schedule.At)
@@ -271,6 +296,13 @@ func (c Config) StaleAfter() (time.Duration, error) {
 		return 120 * time.Hour, nil
 	}
 	return time.ParseDuration(c.Window.StaleAfter)
+}
+
+func (c Config) NarrateTimeout() time.Duration {
+	if d, err := time.ParseDuration(c.Narrate.Timeout); err == nil && d > 0 {
+		return d
+	}
+	return 5 * time.Minute
 }
 
 func (c Config) OutputRoot() string { return Expand(c.Output.Root) }

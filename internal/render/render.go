@@ -44,6 +44,21 @@ func Markdown(d model.Day, cfg config.Config) string {
 		fmt.Fprintf(&b, "*%d agent-driven session(s) ran alongside and are excluded from these totals.*\n\n", t.AgentStreams)
 	}
 
+	// Prose on top, detail underneath — the order you actually read in. The
+	// whole document is re-rendered from the JSON every time, so this section
+	// appearing or disappearing is idempotent by construction; there is no
+	// block to splice and nothing to duplicate on a re-run.
+	if n := d.Narration; n != nil {
+		b.WriteString("## Summary\n\n")
+		fmt.Fprintf(&b, "%s\n\n", n.Shape)
+		if n.Moved != "" {
+			fmt.Fprintf(&b, "**Moved.** %s\n\n", n.Moved)
+		}
+		if n.Carrying != "" {
+			fmt.Fprintf(&b, "**Carrying.** %s\n\n", n.Carrying)
+		}
+	}
+
 	// ---- what shipped, by business or repo ----
 	if t.Commits > 0 {
 		byGroup := map[string]*group{}
@@ -93,6 +108,20 @@ func Markdown(d model.Day, cfg config.Config) string {
 			facts = append(facts, rs)
 		}
 		fmt.Fprintf(&b, "%s\n\n", strings.Join(facts, " · "))
+
+		if n := s.Narration; n != nil {
+			fmt.Fprintf(&b, "%s\n\n", n.Intent)
+			fmt.Fprintf(&b, "%s\n\n", n.Happened)
+			for _, x := range n.Decisions {
+				fmt.Fprintf(&b, "- **Decided.** %s\n", x)
+			}
+			for _, x := range n.Open {
+				fmt.Fprintf(&b, "- **Open.** %s\n", x)
+			}
+			if len(n.Decisions) > 0 || len(n.Open) > 0 {
+				b.WriteString("\n")
+			}
+		}
 
 		if len(s.Prompts) > 0 {
 			b.WriteString("**Asked for**\n\n")
@@ -158,6 +187,54 @@ func Markdown(d model.Day, cfg config.Config) string {
 				br = "detached"
 			}
 			fmt.Fprintf(&b, "| %s | %s | %d | %d |\n", r.Repo, br, r.Ahead, r.Dirty)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(d.ClosedToday) > 0 {
+		fmt.Fprintf(&b, "## Closed today (%d)\n\n", len(d.ClosedToday))
+		// Printed with the evidence so a wrong close is visible the day it
+		// happens. False positives are the dangerous direction, and the fix is
+		// `daybook reopen <id>`.
+		for _, it := range d.ClosedToday {
+			ev := ""
+			if it.ClosedBy != nil {
+				switch it.ClosedBy.Kind {
+				case "commit":
+					ev = fmt.Sprintf(" — `%s@%s`", it.ClosedBy.Repo, it.ClosedBy.SHA)
+				case "session":
+					ev = fmt.Sprintf(" — \"%s\"", clip(it.ClosedBy.Quote, 90))
+				case "manual":
+					ev = " — closed by hand"
+				}
+			}
+			fmt.Fprintf(&b, "- `%s` %s%s\n", it.ID, it.Text, ev)
+		}
+		b.WriteString("\n")
+	}
+
+	if open := d.OpenItems; len(open) > 0 {
+		fmt.Fprintf(&b, "## Still open (%d)\n\n", len(open))
+		b.WriteString("*Work already done that has not finished proving itself. Oldest first.*\n\n")
+		// Capped, because a single real day produced 44 of these and an
+		// uncapped list buries the report it is attached to within a week.
+		// Oldest first means the cap keeps what is rotting and drops what is
+		// merely recent; `daybook open` still shows everything.
+		const shown = 15
+		trimmed := open
+		if len(trimmed) > shown {
+			trimmed = trimmed[:shown]
+		}
+		for _, it := range trimmed {
+			age := it.Age(d.WindowEnd)
+			tag := ""
+			if age >= 14 {
+				tag = " ⚠"
+			}
+			fmt.Fprintf(&b, "- `%s` **%dd**%s %s *(%s)*\n", it.ID, age, tag, it.Text, it.Stream)
+		}
+		if len(open) > len(trimmed) {
+			fmt.Fprintf(&b, "\n*…and %d more. `daybook open` for the full list.*\n", len(open)-len(trimmed))
 		}
 		b.WriteString("\n")
 	}
