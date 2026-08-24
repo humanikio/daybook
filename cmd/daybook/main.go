@@ -11,11 +11,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kardianos/service"
 
 	"github.com/tndigitalmark/claude-code-daybook/internal/config"
 	"github.com/tndigitalmark/claude-code-daybook/internal/derive"
@@ -23,8 +26,10 @@ import (
 	"github.com/tndigitalmark/claude-code-daybook/internal/model"
 	"github.com/tndigitalmark/claude-code-daybook/internal/narrate"
 	"github.com/tndigitalmark/claude-code-daybook/internal/render"
+	"github.com/tndigitalmark/claude-code-daybook/internal/schedule"
 	"github.com/tndigitalmark/claude-code-daybook/internal/source"
 	"github.com/tndigitalmark/claude-code-daybook/internal/source/claudecode"
+	"github.com/tndigitalmark/claude-code-daybook/internal/svc"
 	"github.com/tndigitalmark/claude-code-daybook/internal/vcs"
 	"github.com/tndigitalmark/claude-code-daybook/internal/wizard"
 )
@@ -55,6 +60,12 @@ func main() {
 		err = cmdClose(args, false)
 	case "reopen":
 		err = cmdClose(args, true)
+	case "week":
+		err = cmdWeek(args)
+	case "serve":
+		err = cmdServe(args)
+	case "service":
+		err = cmdService(args)
 	case "verify":
 		err = cmdVerify(args)
 	case "version", "--version", "-v":
@@ -82,6 +93,9 @@ func usage() {
   daybook open            work that has not finished proving itself
   daybook close <id>      close a ledger item by hand
   daybook reopen <id>     undo a close
+  daybook week [date]     rollup for the week containing date
+  daybook serve           run the scheduler (foreground in a terminal)
+  daybook service …       install | uninstall | start | stop | restart | status
   daybook verify          check config, sources, repos and parse health
   daybook version
 
@@ -203,9 +217,223 @@ func writeDay(cfg config.Config, day model.Day) error {
 		[]byte(render.Markdown(day, cfg))); err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(cfg.StateDir(), "last-run.json"),
-		[]byte(fmt.Sprintf("{\n  \"windowEnd\": %q,\n  \"date\": %q,\n  \"machine\": %q\n}\n",
-			day.WindowEnd.Format(time.RFC3339), day.Date, day.Machine)))
+	st := loadLastRun(cfg)
+	st.WindowEnd = day.WindowEnd.Format(time.RFC3339)
+	st.Date = day.Date
+	st.Machine = day.Machine
+	return saveLastRun(cfg, st)
+}
+
+// lastRun is what makes scan idempotent and catch-up free.
+//
+// Slot is the scheduled time this machine has already served. The scheduler
+// compares it against the most recent slot that has passed, which is why a
+// laptop asleep at 23:30 still gets its report on wake instead of silently
+// skipping the day.
+type lastRun struct {
+	WindowEnd string `json:"windowEnd,omitempty"`
+	Date      string `json:"date,omitempty"`
+	Machine   string `json:"machine,omitempty"`
+	Slot      string `json:"slot,omitempty"`
+}
+
+func lastRunPath(cfg config.Config) string {
+	return filepath.Join(cfg.StateDir(), "last-run.json")
+}
+
+func loadLastRun(cfg config.Config) lastRun {
+	var st lastRun
+	if b, err := os.ReadFile(lastRunPath(cfg)); err == nil {
+		_ = json.Unmarshal(b, &st)
+	}
+	return st
+}
+
+func saveLastRun(cfg config.Config, st lastRun) error {
+	b, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFile(lastRunPath(cfg), b)
+}
+
+func cmdWeek(args []string) error {
+	fs := flag.NewFlagSet("week", flag.ContinueOnError)
+	cfg, _, err := loadCfg(fs, args)
+	if err != nil {
+		return err
+	}
+	when := time.Now()
+	if rest := fs.Args(); len(rest) > 0 {
+		if t, err := time.ParseInLocation("2006-01-02", rest[0], time.Local); err == nil {
+			when = t
+		} else {
+			return fmt.Errorf("want a date like 2026-08-24, got %q", rest[0])
+		}
+	}
+	mon, sun := render.WeekBounds(when)
+
+	var days []model.Day
+	for d := mon; !d.After(sun); d = d.AddDate(0, 0, 1) {
+		if day, err := loadDay(cfg, d.Format("2006-01-02")); err == nil {
+			days = append(days, day)
+		}
+	}
+	if len(days) == 0 {
+		return fmt.Errorf("no scanned days between %s and %s", mon.Format("2006-01-02"), sun.Format("2006-01-02"))
+	}
+
+	md := render.Week(days, cfg)
+	y, wk := when.ISOWeek()
+	out := filepath.Join(cfg.OutputsDir(), fmt.Sprintf("%d-W%02d.md", y, wk))
+	if err := writeFile(out, []byte(md)); err != nil {
+		return err
+	}
+	fmt.Print(md)
+	fmt.Fprintf(os.Stderr, "\nwritten to %s\n", out)
+	return nil
+}
+
+func cmdServe(args []string) error {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	cfg, _, err := loadCfg(fs, args)
+	if err != nil {
+		return err
+	}
+	if c := svc.Conflicts(); len(c) > 0 {
+		// A system-level registration can never work — wrong HOME, wrong
+		// keychain, wrong git identity — and its symptom is an empty report
+		// rather than an error, so it has to be said out loud.
+		fmt.Fprintf(os.Stderr, "warning: a system-level service is registered and cannot work:\n  %s\n",
+			strings.Join(c, "\n  "))
+	}
+
+	s, err := svc.New(cfg, func() error { return serveLoop(cfg) })
+	if err != nil {
+		return err
+	}
+	if service.Interactive() {
+		next, _ := schedule.Next(cfg, time.Now())
+		fmt.Printf("daybook serving · next run %s · ctrl-c to stop\n", next.Format("Mon 15:04"))
+	}
+	return s.Run()
+}
+
+// serveLoop wakes once a minute and asks whether a scheduled slot is owed.
+//
+// A minute of granularity is plenty for a daily job and keeps the loop trivial:
+// no timers to recompute when the clock jumps, no wake notifications to
+// subscribe to, and a laptop that slept through its slot simply notices on the
+// first tick after waking.
+func serveLoop(cfg config.Config) error {
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+
+	for {
+		// Config is re-read every tick rather than captured at start. The run
+		// time is the field people change most, and "I changed it and it did
+		// not take until I restarted the service" is a bad first bug.
+		live, err := config.Load(cfg.Path())
+		if err != nil {
+			live = cfg
+		}
+
+		st := loadLastRun(live)
+		var served time.Time
+		if st.Slot != "" {
+			served, _ = time.Parse(time.RFC3339, st.Slot)
+		}
+
+		if slot, due := schedule.Due(live, served, time.Now()); due {
+			log.Printf("running for slot %s", slot.Format(time.RFC3339))
+			if err := runScheduled(live, slot); err != nil {
+				// Do NOT record the slot on failure: leaving it unserved means
+				// the next tick tries again, which is what you want for a
+				// transient error like a locked git index.
+				log.Printf("run failed: %v", err)
+			}
+		}
+		<-tick.C
+	}
+}
+
+func runScheduled(cfg config.Config, slot time.Time) error {
+	day, err := scan(cfg)
+	if err != nil {
+		return err
+	}
+	carryNarration(cfg, &day)
+	if err := writeDay(cfg, day); err != nil {
+		return err
+	}
+	if cfg.Narrate.Enabled {
+		// Narration failing must not un-serve the slot: the report is already
+		// on disk and re-running the whole scan tomorrow would not help.
+		if err := narrateDay(cfg, &day); err != nil {
+			log.Printf("narration: %v", err)
+		}
+	}
+
+	st := loadLastRun(cfg)
+	st.Slot = slot.Format(time.RFC3339)
+	if err := saveLastRun(cfg, st); err != nil {
+		return err
+	}
+	log.Printf("wrote %s · %d streams · %d commits", day.Date, day.Totals.Streams, day.Totals.Commits)
+	return nil
+}
+
+func cmdService(args []string) error {
+	fs := flag.NewFlagSet("service", flag.ContinueOnError)
+	cfg, _, err := loadCfg(fs, args)
+	if err != nil {
+		return err
+	}
+	rest := fs.Args()
+	action := "status"
+	if len(rest) > 0 {
+		action = rest[0]
+	}
+
+	if action == "status" {
+		installed, running, err := svc.Status(cfg)
+		if err != nil {
+			return err
+		}
+		switch {
+		case !installed:
+			fmt.Printf("not installed — `daybook service install` registers a %s\n", svc.AutoStartKind())
+		case running:
+			next, _ := schedule.Next(cfg, time.Now())
+			fmt.Printf("installed and running · next run %s\n", next.Format("Mon 15:04"))
+		default:
+			fmt.Println("installed but stopped — `daybook service start`")
+		}
+		st := loadLastRun(cfg)
+		if st.Slot != "" {
+			fmt.Printf("last served slot: %s\n", st.Slot)
+		}
+		for _, c := range svc.Conflicts() {
+			fmt.Printf("! system-level registration that cannot work: %s\n", c)
+		}
+		return nil
+	}
+
+	switch action {
+	case "install", "uninstall", "start", "stop", "restart":
+		if err := svc.Control(cfg, action); err != nil {
+			return err
+		}
+		fmt.Println(action + "ed")
+		if action == "install" {
+			if n := svc.PostInstallNote(); n != "" {
+				fmt.Println("  " + n)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown action %q — install|uninstall|start|stop|restart|status", action)
+	}
 }
 
 func cmdNarrate(args []string) error {
@@ -420,11 +648,35 @@ func cmdVerify(args []string) error {
 		fmt.Printf("  ! %d repo(s) have no remote — treated as %q\n", noRemote, cfg.Output.NoRemote)
 	}
 
-	if b, err := os.ReadFile(filepath.Join(cfg.StateDir(), "last-run.json")); err == nil {
-		fmt.Printf("✓ last run     %s", strings.ReplaceAll(strings.TrimSpace(string(b)), "\n", ""))
-		fmt.Println()
+	st := loadLastRun(cfg)
+	if st.Date != "" {
+		fmt.Printf("✓ last run     %s (window ended %s)\n", st.Date, st.WindowEnd)
 	} else {
 		fmt.Println("  ! never run — `daybook scan`")
+	}
+
+	installed, running, _ := svc.Status(cfg)
+	switch {
+	case installed && running:
+		next, _ := schedule.Next(cfg, time.Now())
+		fmt.Printf("✓ scheduler    running · next %s\n", next.Format("Mon 15:04"))
+	case installed:
+		fmt.Println("  ! scheduler installed but stopped — `daybook service start`")
+	default:
+		fmt.Println("  ! scheduler not installed — `daybook service install` (optional)")
+	}
+	if st.Slot != "" {
+		fmt.Printf("  last slot    %s\n", st.Slot)
+	}
+	for _, c := range svc.Conflicts() {
+		fmt.Printf("✗ a system-level registration exists and cannot work: %s\n", c)
+	}
+
+	if _, err := narrate.Resolve(cfg); err != nil {
+		fmt.Printf("  ! narration  %v\n", err)
+	} else {
+		fmt.Printf("✓ narration    available (provider %s, enabled=%v)\n",
+			cfg.Narrate.Provider, cfg.Narrate.Enabled)
 	}
 	return nil
 }

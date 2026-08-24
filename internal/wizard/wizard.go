@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/tndigitalmark/claude-code-daybook/internal/config"
+	"github.com/tndigitalmark/claude-code-daybook/internal/svc"
 	"github.com/tndigitalmark/claude-code-daybook/internal/vcs"
 )
 
@@ -79,7 +80,7 @@ func ok(f string, a ...any)   { fmt.Printf("      %s %s\n", mark(true, false), f
 func warn(f string, a ...any) { fmt.Printf("      %s %s\n", mark(false, true), fmt.Sprintf(f, a...)) }
 func note(f string, a ...any) { fmt.Printf("        %s%s%s\n", dim, fmt.Sprintf(f, a...), reset) }
 
-const total = 4
+const total = 5
 
 // Run walks setup and writes the config.
 func Run(force bool) error {
@@ -198,8 +199,17 @@ func Run(force bool) error {
 	}
 	cfg.Schedule.At = at
 	ok("daily at %s", at)
-	note("scheduling itself lands in v3 (daybook service install);")
-	note("until then run `daybook scan` whenever you like — it is idempotent")
+
+	if interactive {
+		if strings.ToLower(ask(in, "      run it late if the machine was asleep then? [Y/n]: ", "y")) == "n" {
+			cfg.Schedule.CatchUp = false
+		}
+	}
+	if cfg.Schedule.CatchUp {
+		note("asleep at %s? it runs on wake rather than skipping the day", at)
+	} else {
+		note("a missed run is skipped rather than produced late")
+	}
 
 	// ---------------------------------------------------------------- 4
 	step(4, total, "Writing config")
@@ -220,11 +230,68 @@ func Run(force bool) error {
 	ok("output → %s", cfg.OutputRoot())
 	note("this directory holds prompt text. keep it private.")
 
+	// ---------------------------------------------------------------- 5
+	step(5, total, "Schedule it")
+	offerService(in, cfg, interactive)
+
 	fmt.Printf("\n  %snext%s\n", bold, reset)
 	fmt.Printf("    daybook scan     run one now against the last %s\n", cfg.Window.Length)
 	fmt.Printf("    daybook day      read it\n")
 	fmt.Printf("    daybook verify   check everything is wired up\n\n")
 	return nil
+}
+
+// offerService installs the auto-start registration, or explains why not.
+//
+// Follows the same rule as everything else here: it asks, it never assumes, and
+// declining leaves a working tool behind — `daybook scan` by hand is a complete
+// workflow.
+func offerService(in *bufio.Reader, cfg config.Config, interactive bool) {
+	for _, c := range svc.Conflicts() {
+		warn("a system-level registration exists and cannot work: %s", c)
+		note("it runs as root, so it cannot read your keychain, your git identity,")
+		note("or your transcripts — remove it, then install the user one below")
+	}
+
+	if installed, running, _ := svc.Status(cfg); installed {
+		if running {
+			ok("%s already installed and running", svc.AutoStartKind())
+		} else {
+			note("installed but stopped — starting it")
+			if err := svc.Control(cfg, "start"); err != nil {
+				warn("could not start: %v", err)
+				note("start it:  daybook service start")
+				return
+			}
+			ok("started")
+		}
+		return
+	}
+
+	note("installs a %s that runs as YOU — so it can read the `claude` login", svc.AutoStartKind())
+	note("and your git identity. Runs at %s.", cfg.Schedule.At)
+	if !interactive {
+		note("install it later:  daybook service install")
+		return
+	}
+	if strings.ToLower(ask(in, "      install it now? [Y/n]: ", "y")) == "n" {
+		note("later:  daybook service install")
+		return
+	}
+	if err := svc.Control(cfg, "install"); err != nil {
+		warn("install failed: %v", err)
+		note("retry:  daybook service install")
+		return
+	}
+	if err := svc.Control(cfg, "start"); err != nil {
+		ok("installed — it starts at your next login")
+		note("start now:  daybook service start")
+	} else {
+		ok("installed and started")
+	}
+	if n := svc.PostInstallNote(); n != "" {
+		note("%s", n)
+	}
 }
 
 // defaultRepoRoot guesses where this person keeps code, preferring a directory

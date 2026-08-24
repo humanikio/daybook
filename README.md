@@ -34,6 +34,13 @@ where your repos live and it will find them.
 daybook init            guided setup
 daybook scan            read the window, join against git, write the report
 daybook day [date]      print a report (default: today)
+daybook week [date]     rollup for the week containing date
+daybook narrate [date]  add prose and reconcile the open ledger
+daybook open            work that has not finished proving itself
+daybook close <id>      close a ledger item by hand
+daybook reopen <id>     undo a close
+daybook serve           run the scheduler in the foreground
+daybook service …       install | uninstall | start | stop | restart | status
 daybook verify          check config, sources, repos, parse health
 daybook version
 ```
@@ -139,10 +146,36 @@ visible instead of silent. It will break eventually; please open an issue.
 **Stream titles come from Claude and reflect where a session started**, not
 necessarily what it is doing now. A long-lived session keeps its original name.
 
+## Automatic daily reports
+
+```sh
+daybook service install
+```
+
+Registers a LaunchAgent (macOS), a systemd `--user` service (Linux), or a logon
+task (Windows) — **always as you, never as root**, because a root service has a
+different `HOME`, keychain and git identity, and would produce an empty report
+forever.
+
+Runs are owed to a *slot* rather than a moment, so a laptop asleep at 23:30 gets
+its report on wake instead of skipping the day. See `docs/schedule.md`.
+
+## Prose summaries
+
+```sh
+daybook scan --narrate
+```
+
+Narration spawns the `claude` you are already signed in with — daybook holds no
+credentials — and adds what git cannot: what you were trying to do, what
+actually happened, **decisions no commit records**, and what is still unproven.
+
+Everything checkable in its output must appear in the input or the narration is
+discarded. See `docs/narration.md`.
+
 ## Not built yet
 
-Narration (prose summaries via the `claude` you are already signed in with), the
-open-item ledger, weekly rollups, and scheduled runs. See `docs/`.
+The `api` narration provider. `provider: cli` is the default and works today.
 
 ## Licence
 
