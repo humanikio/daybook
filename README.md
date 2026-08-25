@@ -167,6 +167,11 @@ Install with Go instead: `go install github.com/humanikio/daybook/cmd/daybook@la
 Every release binary is [cosign](https://docs.sigstore.dev/)-signed and shipped
 with checksums.
 
+## Releases
+
+Every version is described in [CHANGELOG.md](CHANGELOG.md), and the release
+workflow refuses to publish a tag that has no entry there.
+
 ## Licence
 
 MIT.

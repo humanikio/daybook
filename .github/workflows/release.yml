@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # describe and diff against the previous tag need more than the
+          # single commit a default checkout fetches.
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
@@ -43,6 +47,47 @@ jobs:
             if ($errs) { $errs | ForEach-Object { $_.Message }; exit 1 }
             "install.ps1: ok"
           '
+
+      # Everything here is knowable before a single binary is built, and a
+      # release that fails at the end has still burned the whole build.
+      - name: Gate the tag
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"
+
+          # A release must say what it is. The release page is where the install
+          # docs point and where anyone deciding whether to upgrade looks —
+          # publishing a fallback body there is worse than not publishing.
+          if ! awk -v want="## ${TAG}" '$0 == want { found=1 } END { exit !found }' CHANGELOG.md; then
+            echo "::error title=No changelog section::CHANGELOG.md has no \"## ${TAG}\" heading. Add one and re-tag."
+            exit 1
+          fi
+          body=$(awk -v want="## ${TAG}" '$0==want{g=1;next} g&&/^## /{exit} g{print}' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+            echo "::error title=Empty changelog section::\"## ${TAG}\" exists but says nothing."
+            exit 1
+          fi
+
+          # A tag over an unchanged tree is a mistake every time. Note that a
+          # BYTE comparison of the binaries cannot catch this: the version
+          # string is injected at build time, so two tags never produce
+          # identical output however identical the source.
+          prev=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$prev" ]; then
+            changed=$(git diff --name-only "$prev".."$TAG" | wc -l | tr -d ' ')
+            if [ "$changed" -eq 0 ]; then
+              echo "::error title=Nothing changed::${TAG} has the same tree as ${prev}."
+              exit 1
+            fi
+            code=$(git diff --name-only "$prev".."$TAG" | grep -c '\.go$' || true)
+            echo "since ${prev}: ${changed} files, ${code} of them Go"
+            if [ "$code" -eq 0 ]; then
+              # Legitimate — the README is how people decide to try this — but
+              # it should be a deliberate choice, visible in the log, not a
+              # surprise to whoever reads the release later.
+              echo "::notice title=Documentation release::No Go files changed since ${prev}. The binaries differ only by the injected version string."
+            fi
+          fi
 
       - name: Verify the tree it is about to ship
         run: |
@@ -107,17 +152,9 @@ jobs:
             grab { print }
           ' CHANGELOG.md > notes.body || true
 
-          if [ -s notes.body ] && grep -q '[^[:space:]]' notes.body; then
-            echo "release notes: $(wc -l < notes.body) lines from CHANGELOG.md"
-          else
-            echo "::warning title=No release notes::CHANGELOG.md has no \"## ${TAG}\" section. Publishing a fallback body."
-            {
-              echo "Binaries, checksums and cosign signatures for \`${TAG}\`."
-              echo
-              echo "Notes for this version were not written before the tag. See the"
-              echo "[README](https://github.com/humanikio/daybook#readme) for what this does."
-            } > notes.body
-          fi
+          # The gate already refused a tag without a section, so a fallback here
+          # would be unreachable code pretending to be a safety net.
+          echo "release notes: $(wc -l < notes.body) lines from CHANGELOG.md"
 
           {
             echo
