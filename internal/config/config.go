@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -277,7 +278,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("narrate.provider: want auto|cli|api|off, got %q", c.Narrate.Provider)
 	}
 	if c.Narrate.Timeout != "" {
-		if _, err := time.ParseDuration(c.Narrate.Timeout); err != nil {
+		if _, err := ParseDuration(c.Narrate.Timeout); err != nil {
 			return fmt.Errorf("narrate.timeout: %w", err)
 		}
 	}
@@ -294,22 +295,51 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// ParseDuration is time.ParseDuration plus days and weeks.
+//
+// Go's parser stops at hours, so "7d" — the obvious way to write a week, and
+// the first thing anyone types into a field labelled "how far back each run
+// looks" — is rejected with `unknown unit "d"`. Every duration in this config
+// is measured in days or hours by the people setting it, so the units they
+// reach for should work.
+func ParseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	if n, ok := strings.CutSuffix(s, "d"); ok {
+		if v, err := strconv.ParseFloat(n, 64); err == nil {
+			return time.Duration(v * float64(24*time.Hour)), nil
+		}
+	}
+	if n, ok := strings.CutSuffix(s, "w"); ok {
+		if v, err := strconv.ParseFloat(n, 64); err == nil {
+			return time.Duration(v * float64(7*24*time.Hour)), nil
+		}
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("want something like 24h, 7d or 2w — got %q", s)
+	}
+	return d, nil
+}
+
 func (c Config) WindowLength() (time.Duration, error) {
 	if c.Window.Length == "" {
 		return 24 * time.Hour, nil
 	}
-	return time.ParseDuration(c.Window.Length)
+	return ParseDuration(c.Window.Length)
 }
 
 func (c Config) StaleAfter() (time.Duration, error) {
 	if c.Window.StaleAfter == "" {
 		return 120 * time.Hour, nil
 	}
-	return time.ParseDuration(c.Window.StaleAfter)
+	return ParseDuration(c.Window.StaleAfter)
 }
 
 func (c Config) NarrateTimeout() time.Duration {
-	if d, err := time.ParseDuration(c.Narrate.Timeout); err == nil && d > 0 {
+	if d, err := ParseDuration(c.Narrate.Timeout); err == nil && d > 0 {
 		return d
 	}
 	return 5 * time.Minute

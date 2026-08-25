@@ -62,12 +62,16 @@ func selectRaw(title string, items []Item, colour bool) int {
 		}
 		fmt.Printf("%s%s%s\r\n", bold, title, reset)
 		fmt.Printf("%s  ↑↓ move · enter edit · q done%s\r\n", dim, reset)
+		w := width()
 		for i, it := range items {
 			mark, style := "  ", ""
 			if i == cur {
 				mark, style = cyan+"▸ "+reset, bold
 			}
-			fmt.Printf("%s%s%-18s%s %s\r\n", mark, style, it.Label, reset, it.Value)
+			// Truncate to the terminal width. A row that wraps costs the
+			// redraw a line it never walks back, and the header accumulates
+			// down the screen — one copy per keypress.
+			fmt.Printf("%s%s%-18s%s %s\r\n", mark, style, it.Label, reset, fit(it.Value, w-23))
 		}
 	}
 	draw(true)
@@ -99,6 +103,22 @@ func selectRaw(title string, items []Item, colour bool) int {
 		}
 		draw(false)
 	}
+}
+
+// fit shortens from the MIDDLE. The ends of these values carry the meaning —
+// which folder, which domain — and lopping the tail off two long emails leaves
+// two rows that look identical.
+func fit(s string, max int) string {
+	// Runes, not bytes. A terminal counts columns, and the ellipsis this
+	// inserts is one column but three bytes — sizing by len() overshot the
+	// width by two and reintroduced the wrap it exists to prevent.
+	r := []rune(s)
+	if max < 12 || len(r) <= max {
+		return s
+	}
+	head := (max - 1) / 2
+	tail := max - 1 - head
+	return string(r[:head]) + "…" + string(r[len(r)-tail:])
 }
 
 // selectNumbered is the everywhere-else path: no raw mode, no escape codes.

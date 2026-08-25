@@ -30,8 +30,14 @@ func Markdown(d model.Day, cfg config.Config) string {
 	t := d.Totals
 
 	fmt.Fprintf(&b, "# %s\n\n", d.WindowEnd.Format("Monday, 2 January 2006"))
+	// A weekday alone is ambiguous once the window is a week or more — "Tue
+	// 16:51 → Tue 16:51" reads as an instant when it is actually seven days.
+	stamp := "Mon 15:04"
+	if d.WindowEnd.Sub(d.WindowStart) >= 6*24*time.Hour {
+		stamp = "Mon 2 Jan 15:04"
+	}
 	fmt.Fprintf(&b, "*%s → %s · %s*\n\n",
-		d.WindowStart.Format("Mon 15:04"), d.WindowEnd.Format("Mon 15:04"), d.Machine)
+		d.WindowStart.Format(stamp), d.WindowEnd.Format(stamp), d.Machine)
 
 	fmt.Fprintf(&b, "**%s active** · %d streams · %d prompts · **%d commits** `+%s/-%s` · %d repos\n\n",
 		dur(t.ActiveMinutes), t.Streams, t.Prompts, t.Commits,
