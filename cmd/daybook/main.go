@@ -102,7 +102,9 @@ Usage:
   daybook init                       Guided first-run setup (start here)
   daybook scan [--narrate]           Read the last window, join it against git,
                                      write the report. Idempotent — safe to run
-                                     as often as you like.
+                                     as often as you like. Seconds on its own;
+                                     minutes when narration is on, so
+                                     --no-narrate skips it for a quick pass.
   daybook day [date]                 Print a report. date, "today" or "yesterday"
   daybook week [date]                Rollup for the week containing date
 
@@ -168,6 +170,7 @@ func cmdScan(args []string) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	toStdout := fs.Bool("stdout", false, "print instead of writing")
 	alsoNarrate := fs.Bool("narrate", false, "narrate after scanning")
+	noNarrate := fs.Bool("no-narrate", false, "skip narration even if it is enabled")
 	cfg, _, err := loadCfg(fs, args)
 	if err != nil {
 		return err
@@ -205,7 +208,11 @@ func cmdScan(args []string) error {
 		fmt.Fprintf(os.Stderr, "    fix:  daybook config set identity.authors \"%s\"\n\n", strings.Join(emails(day.OtherAuthors), ","))
 	}
 
-	if *alsoNarrate || cfg.Narrate.Enabled {
+	if !*noNarrate && (*alsoNarrate || cfg.Narrate.Enabled) {
+		// Say it before starting. Narration takes minutes; a scan that has
+		// always returned in seconds and then sits silent reads as a hang —
+		// the same mistake the setup wizard made, and the same fix.
+		fmt.Printf("narrating %d streams… (--no-narrate to skip)\n", countHuman(day))
 		return narrateDay(cfg, &day)
 	}
 	return nil
@@ -239,6 +246,16 @@ func carryNarration(cfg config.Config, day *model.Day) {
 }
 
 // writeDay puts the facts down before the prose, always in that order.
+func countHuman(day model.Day) int {
+	n := 0
+	for _, s := range day.Streams {
+		if !s.Agent {
+			n++
+		}
+	}
+	return n
+}
+
 func writeDay(cfg config.Config, day model.Day) error {
 	raw, err := render.JSON(day)
 	if err != nil {

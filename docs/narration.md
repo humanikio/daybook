@@ -18,9 +18,10 @@ Three ways in, and they are independent:
 | `daybook narrate [date]` | on demand, over a scan that already happened |
 | `narrate.enabled: true` | **every** scan, including the scheduled one |
 
-**It does not run on a plain `daybook scan`.** That is deliberate: a scan is
-cheap, idempotent and offline, and something you might run ten times while
-poking at a config. Narration spends quota and takes minutes.
+**With `narrate.enabled: true`, a plain `daybook scan` narrates too.** That is
+usually what you want — but it turns a two-second command into a two-minute
+one, so `scan` says it is narrating before it starts, and `--no-narrate` skips
+it when you just want the facts refreshed.
 
 For the nightly report — the one you actually read — you almost certainly want
 it always on:
