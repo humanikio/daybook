@@ -37,6 +37,15 @@ func Markdown(d model.Day, cfg config.Config) string {
 		dur(t.ActiveMinutes), t.Streams, t.Prompts, t.Commits,
 		comma(t.Added), comma(t.Deleted), t.Repos)
 
+	if len(d.OtherAuthors) > 0 {
+		b.WriteString("> **No commits matched your author filter, but this window had commits.**\n>\n")
+		b.WriteString("> These identities committed here:\n>\n")
+		for _, a := range d.OtherAuthors {
+			fmt.Fprintf(&b, "> - `%s`\n", a)
+		}
+		b.WriteString(">\n> Fix with `daybook config set identity.authors \"a@b.com,c@d.com\"`.\n\n")
+	}
+
 	if t.Local > 0 {
 		fmt.Fprintf(&b, "> **%d of %d commits have not left this machine.**\n\n", t.Local, t.Commits)
 	}

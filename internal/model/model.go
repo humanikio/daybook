@@ -277,6 +277,15 @@ type Day struct {
 	OpenItems   []OpenItem `json:"openItems,omitempty"`
 	ClosedToday []OpenItem `json:"closedToday,omitempty"`
 
+	// OtherAuthors names identities that DID commit in this window but were
+	// filtered out by identity.authors.
+	//
+	// It exists because the failure it catches is silent: a wrong author filter
+	// produces a report with streams, hours and prompts, and zero commits. That
+	// looks like a quiet day rather than a misconfiguration, and it was wrong on
+	// the first real run of this tool.
+	OtherAuthors []string `json:"otherAuthors,omitempty"`
+
 	// ParseErrors counts transcript lines that could not be read. The format is
 	// undocumented and moves between Claude Code versions, so this is expected
 	// to be non-zero eventually — and a silent zero would be the real bug.

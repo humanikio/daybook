@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -194,6 +195,13 @@ func cmdScan(args []string) error {
 	fmt.Printf("%s  %d streams · %d commits (%d not pushed) · %s active\n",
 		filepath.Join(cfg.OutputsDir(), day.Date+".md"),
 		day.Totals.Streams, day.Totals.Commits, day.Totals.Local, durStr(day.Totals.ActiveMinutes))
+	if len(day.OtherAuthors) > 0 {
+		fmt.Fprintf(os.Stderr, "\n  ! no commits matched identity.authors, but this window had commits by:\n")
+		for _, a := range day.OtherAuthors {
+			fmt.Fprintf(os.Stderr, "      %s\n", a)
+		}
+		fmt.Fprintf(os.Stderr, "    fix:  daybook config set identity.authors \"%s\"\n\n", strings.Join(emails(day.OtherAuthors), ","))
+	}
 
 	if *alsoNarrate || cfg.Narrate.Enabled {
 		return narrateDay(cfg, &day)
@@ -751,6 +759,22 @@ func writeFile(path string, b []byte) error {
 	return os.WriteFile(path, b, 0o600)
 }
 
+// emails pulls the address out of "Name <addr>" so the suggested command is
+// copy-pasteable rather than something to hand-edit.
+func emails(authors []string) []string {
+	var out []string
+	for _, a := range authors {
+		if i := strings.Index(a, "<"); i >= 0 {
+			if j := strings.Index(a[i:], ">"); j > 0 {
+				out = append(out, a[i+1:i+j])
+				continue
+			}
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 func durStr(minutes int) string {
 	if minutes < 60 {
 		return fmt.Sprintf("%dm", minutes)
@@ -815,7 +839,7 @@ func scan(cfg config.Config) (model.Day, error) {
 		commits = append(commits, rr.commits...)
 	}
 
-	return derive.Build(derive.Input{
+	day := derive.Build(derive.Input{
 		Cfg:         cfg,
 		Streams:     res.Streams,
 		Commits:     commits,
@@ -823,5 +847,22 @@ func scan(cfg config.Config) (model.Day, error) {
 		WindowStart: start,
 		WindowEnd:   end,
 		ParseErrors: res.ParseErrors,
-	}), nil
+	})
+
+	// Nothing matched. Before reporting a quiet day, check whether the window
+	// was actually quiet or whether the author filter is simply wrong — the
+	// two are indistinguishable in the output otherwise.
+	if day.Totals.Commits == 0 && len(authors) > 0 {
+		seen := map[string]bool{}
+		for _, r := range repos {
+			for _, a := range vcs.Authors(r.Root, start, end) {
+				if !seen[a] {
+					seen[a] = true
+					day.OtherAuthors = append(day.OtherAuthors, a)
+				}
+			}
+		}
+		sort.Strings(day.OtherAuthors)
+	}
+	return day, nil
 }

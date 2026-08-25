@@ -245,6 +245,29 @@ func pushedSet(root string, since time.Time) map[string]bool {
 	return set
 }
 
+// Authors lists everyone who committed in the window, unfiltered.
+//
+// Only called when the filtered result was empty, so it costs nothing on a
+// normal run and turns the one genuinely confusing outcome into an answer.
+func Authors(root string, since, until time.Time) []string {
+	out, err := run(root, "log", "--all", "--no-merges",
+		"--since", since.Format(time.RFC3339),
+		"--until", until.Format(time.RFC3339),
+		"--pretty=format:%an <%ae>")
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var xs []string
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !seen[l] {
+			seen[l] = true
+			xs = append(xs, l)
+		}
+	}
+	return xs
+}
+
 // matchesAuthor keeps commits that are yours.
 //
 // An empty author list means "everything", which is right for a personal

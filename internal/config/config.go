@@ -178,7 +178,7 @@ func Default() Config {
 		},
 		Window:   Window{Length: "24h", Scope: "window", StaleAfter: "120h"},
 		Schedule: Schedule{At: "23:30", CatchUp: true},
-		Output:   Output{Root: "~/.daybook", NoRemote: "committed"},
+		Output:   Output{Root: "~/Desktop/daybook", NoRemote: "committed"},
 		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
 		Privacy: Privacy{
 			KeepRawPrompts: true,
@@ -461,13 +461,19 @@ func Render(cfg Config) []byte {
 	w("")
 	w("identity:")
 	if len(cfg.Identity.Authors) > 0 {
-		w("  authors: [%q]", cfg.Identity.Authors[0])
+		// The whole list. This wrote Authors[0] and dropped the rest, which on
+		// a machine with a per-repo identity silently excluded every commit
+		// made under the second one.
+		w("  authors: %s", yamlList(cfg.Identity.Authors))
 	} else {
 		w("  authors: []        # empty = detect from git config user.email")
 	}
 	w("  machine: %q          # empty = hostname; namespaces output files", cfg.Identity.Machine)
 	w("")
 	w("output:")
+	w("  # Where the reports land. Somewhere you will actually open — a report")
+	w("  # you never see is not a report. Note it holds prompt text, so a")
+	w("  # visible folder is also a visible folder during a screen share.")
 	w("  root: %q", cfg.Output.Root)
 	w("  # The bar for repos with no remote, where \"shipped\" is undefined.")
 	w("  no_remote: %s      # committed | exclude", cfg.Output.NoRemote)

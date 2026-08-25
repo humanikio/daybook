@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -201,10 +202,10 @@ func fileOverlap(c model.Commit, s model.Stream) int {
 	n := 0
 	for p := range s.Files {
 		abs := resolve(p, s.CWD)
-		if !strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		if !hasPathPrefix(abs, root) {
 			continue
 		}
-		rel := strings.TrimPrefix(abs, root+string(filepath.Separator))
+		rel := abs[len(root)+1:]
 		if _, ok := changed[rel]; ok {
 			n++
 		}
@@ -271,13 +272,33 @@ func SetRepoRoots(rs []vcs.Repo) { repoRoots = rs }
 func repoOf(path string, _ []model.RepoState) string {
 	best, bestLen := "", 0
 	for _, r := range repoRoots {
-		pre := r.Root + string(filepath.Separator)
-		if strings.HasPrefix(path, pre) && len(r.Root) > bestLen {
+		if hasPathPrefix(path, r.Root) && len(r.Root) > bestLen {
 			best, bestLen = r.Name, len(r.Root)
 		}
 	}
 	return best
 }
+
+// hasPathPrefix compares paths the way the filesystem would.
+//
+// macOS and Windows are case-insensitive by default, so a repo root typed as
+// `~/desktop/...` resolves perfectly on disk while every transcript records
+// `~/Desktop/...`. A case-sensitive prefix test then matches nothing, and the
+// busiest streams report touching no repository at all — with no error, because
+// nothing failed. Linux stays case-sensitive, where two paths differing only in
+// case really are two different directories.
+func hasPathPrefix(path, prefix string) bool {
+	pre := prefix + string(filepath.Separator)
+	if len(path) < len(pre) {
+		return false
+	}
+	if caseInsensitiveFS {
+		return strings.EqualFold(path[:len(pre)], pre)
+	}
+	return path[:len(pre)] == pre
+}
+
+var caseInsensitiveFS = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
 // shipState answers "has this left the machine".
 func shipState(c model.Commit, hasRemote bool, noRemote string) model.State {
