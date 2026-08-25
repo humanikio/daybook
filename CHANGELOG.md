@@ -4,6 +4,57 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section still
 publishes, with a fallback body and a warning in the job log.
 
+## v0.2.0
+
+### `daybook upgrade`
+
+Checks whether a newer release exists and prints the one command that installs
+it. It never replaces the binary — upgrading means re-running the installer,
+which already knows where this platform puts things and how to verify a
+signature.
+
+A failed check reports **unknown** and exits non-zero, so a scripted call
+cannot read silence as "up to date". A build from source always reports an
+update: its version names what it was built from rather than what is in it, so
+comparing it against a release tag answers a question the number cannot answer.
+
+The install command it prints depends on where the running binary came from. A
+binary from `go install` lives in `GOPATH/bin`, where the shell installer would
+not replace it — it writes to `~/.local/bin`, leaving two copies on PATH and an
+upgrade that appears not to have worked.
+
+### Browser detection in `daybook verify`
+
+daybook does not drive a browser. `verify` now reports whether Claude Code
+**could** on this machine, ahead of a feature that will need it, because every
+prerequisite fails silently and the capability is invisible by construction.
+
+Four signals: the extension paired, the native-messaging handshake written and
+naming the extension, a Chromium browser running, and `ANTHROPIC_API_KEY`
+absent.
+
+That last one is the surprise. Claude Code turns the browser off for API-key
+auth — silently, even with the flag set — so nothing in the browser
+configuration is wrong and it still does not work. The key is tracked by
+*location*, because the remedy differs: "unset `ANTHROPIC_API_KEY`" is useless
+advice to somebody whose shell has never had it set, when the value is in a
+plist or a launchd session.
+
+Two things it will not pretend to know. On Windows the manifest is a registry
+key, so a path check would report "not set up" on every correctly configured
+machine — it reports unknown. And pairing is per Claude Code *account*, not per
+host, so a browser on another machine may be reachable while this check sees
+nothing.
+
+### Release process
+
+A tag with no changelog section, an empty one, or an unchanged tree now **fails**
+the release rather than publishing a generic body. The gates run before the
+build, so a mistake costs ten seconds instead of six cross-compiles and a
+signing pass. CI separately checks that this file is well formed on every push.
+
+The procedure is written down in `docs/releasing.md`.
+
 ## v0.1.1
 
 Documentation only. No code changed; the binaries differ from v0.1.0 by the
