@@ -26,6 +26,7 @@ import (
 	"github.com/humanikio/daybook/internal/ledger"
 	"github.com/humanikio/daybook/internal/model"
 	"github.com/humanikio/daybook/internal/narrate"
+	"github.com/humanikio/daybook/internal/platform"
 	"github.com/humanikio/daybook/internal/render"
 	"github.com/humanikio/daybook/internal/schedule"
 	"github.com/humanikio/daybook/internal/selfupdate"
@@ -863,7 +864,46 @@ func cmdVerify(args []string) error {
 		fmt.Printf("✓ narration    available (provider %s, enabled=%v)\n",
 			cfg.Narrate.Provider, cfg.Narrate.Enabled)
 	}
+
+	reportBrowser()
 	return nil
+}
+
+// reportBrowser says whether Claude Code's browser integration would work here.
+//
+// daybook does not drive a browser yet. This reports anyway, because every one
+// of these prerequisites fails SILENTLY and the capability is invisible by
+// construction — absent from `claude mcp list`, absent from any config unless
+// somebody already knew to add it, and switched off entirely by an environment
+// variable nobody associates with browsers.
+//
+// Finding that out now, in a check somebody runs deliberately, is cheaper than
+// finding it out when a feature that needs it does nothing and says nothing.
+func reportBrowser() {
+	b := platform.DetectBrowser()
+	steps := platform.BrowserSetupSteps(b)
+
+	if b.Ready() && len(steps) == 0 {
+		fmt.Println("✓ browser      Claude Code can drive a browser on this machine")
+		return
+	}
+	if !b.Checkable {
+		// Windows keeps the manifest in the registry, so a path check would
+		// call every correct machine broken. Unknown is the honest answer.
+		fmt.Println("  ? browser    cannot be checked on this platform (the manifest is a registry key)")
+	} else {
+		fmt.Println("  ! browser    not ready — Claude Code could not drive a browser here")
+	}
+	for _, st := range steps {
+		fmt.Printf("      · %s\n", st)
+	}
+	if b.APIKey.Any() {
+		// The one that surprises people: nothing in the browser configuration
+		// is wrong, and it still will not work.
+		fmt.Println("      note: this is the silent one — the flag can be set, the extension")
+		fmt.Println("            paired, the browser open, and it stays off while that key exists.")
+	}
+	return
 }
 
 func countTranscripts(root string) (int, error) {

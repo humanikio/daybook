@@ -161,7 +161,8 @@ It will break eventually. Please open an issue when it does.
 [setup](docs/setup.md) · [narration](docs/narration.md) ·
 [schedule](docs/schedule.md) · [privacy](docs/privacy.md) ·
 [record format](docs/format.md) · [troubleshooting](docs/troubleshooting.md) ·
-[releasing](docs/releasing.md)
+[releasing](docs/releasing.md) ·
+[browser detection](docs/browser.md)
 
 Install with Go instead: `go install github.com/humanikio/daybook/cmd/daybook@latest`
 
