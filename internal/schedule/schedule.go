@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/claude-code-daybook/internal/config"
+	"github.com/tndigitalmark/daybook/internal/config"
 )
 
 // weekdays maps the config's day names. Long forms and three-letter forms both

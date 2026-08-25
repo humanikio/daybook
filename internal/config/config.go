@@ -98,7 +98,12 @@ type Narrate struct {
 	Provider string `yaml:"provider"`
 	Binary   string `yaml:"binary"`
 	Model    string `yaml:"model"`
-	Timeout  string `yaml:"timeout"`
+	// Effort trades depth for cost on the api provider: low | medium | high |
+	// xhigh | max. Empty uses the API default. It changes how hard the model
+	// thinks, not which model runs, so it is the right lever to reach for
+	// before downgrading the model.
+	Effort  string `yaml:"effort"`
+	Timeout string `yaml:"timeout"`
 	// Concurrency bounds parallel per-stream calls.
 	Concurrency int `yaml:"concurrency"`
 }
@@ -260,6 +265,11 @@ func (c *Config) Validate() error {
 	case "committed", "exclude":
 	default:
 		return fmt.Errorf("output.no_remote: want \"committed\" or \"exclude\", got %q", c.Output.NoRemote)
+	}
+	switch c.Narrate.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return fmt.Errorf("narrate.effort: want low|medium|high|xhigh|max, got %q", c.Narrate.Effort)
 	}
 	switch c.Narrate.Provider {
 	case "", "auto", "cli", "api", "off":

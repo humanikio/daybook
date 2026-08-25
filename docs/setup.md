@@ -3,7 +3,7 @@
 ## Install
 
 ```sh
-go install github.com/a-handle/claude-code-daybook/cmd/daybook@latest
+go install github.com/a-handle/daybook/cmd/daybook@latest
 ```
 
 Requires Go 1.24+ and `git`. `claude` and `gh` are optional.

@@ -20,7 +20,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/tndigitalmark/claude-code-daybook/internal/config"
+	"github.com/tndigitalmark/daybook/internal/config"
 )
 
 // Provider produces text from a prompt. No tools, no filesystem, no state.
@@ -52,18 +52,21 @@ func Resolve(cfg config.Config) (Provider, error) {
 		}
 		return &cliProvider{cfg: cfg}, nil
 	case "api":
-		return nil, errAPIUnavailable
+		return newAPIProvider(cfg)
 	default: // auto
+		// CLI first: it needs no key, no configuration and no spend beyond a
+		// subscription the user already has. The API is the fallback rather
+		// than the preference precisely because it asks for more.
 		if cliErr == nil {
 			return &cliProvider{cfg: cfg}, nil
 		}
-		return nil, fmt.Errorf("%w\n  (narrate.provider: api is not built into this binary yet)", cliErr)
+		p, apiErr := newAPIProvider(cfg)
+		if apiErr == nil {
+			return p, nil
+		}
+		return nil, fmt.Errorf("no narration provider available:\n  cli: %v\n  api: %v", cliErr, apiErr)
 	}
 }
-
-var errAPIUnavailable = fmt.Errorf(
-	"the api provider is not built into this binary yet — use narrate.provider: cli, " +
-		"which signs in with the `claude` already on this machine")
 
 func probeCLI(cfg config.Config) error {
 	bin := cfg.Narrate.Binary

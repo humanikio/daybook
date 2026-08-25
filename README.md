@@ -9,14 +9,14 @@ Daily work reports built from your Claude Code transcripts and your git history.
 ## Install
 
 ```sh
-go install github.com/a-handle/claude-code-daybook/cmd/daybook@latest
+go install github.com/a-handle/daybook/cmd/daybook@latest
 ```
 
 Or from a clone:
 
 ```sh
-git clone https://github.com/a-handle/claude-code-daybook
-cd claude-code-daybook && go build -o daybook ./cmd/daybook
+git clone https://github.com/a-handle/daybook
+cd daybook && go build -o daybook ./cmd/daybook
 ```
 
 ## Quickstart
@@ -170,12 +170,22 @@ Narration spawns the `claude` you are already signed in with — daybook holds n
 credentials — and adds what git cannot: what you were trying to do, what
 actually happened, **decisions no commit records**, and what is still unproven.
 
+Prefer not to spend that quota? `narrate.provider: api` uses the Anthropic API
+instead (≈$1/day at default settings). Either way no key passes through daybook —
+the SDK owns credential resolution and the CLI uses your existing login.
+
 Everything checkable in its output must appear in the input or the narration is
-discarded. See `docs/narration.md`.
+discarded. See [docs/narration.md](docs/narration.md).
 
-## Not built yet
+## Licence
 
-The `api` narration provider. `provider: cli` is the default and works today.
+MIT. See [LICENSE](LICENSE).
+
+## A note on names
+
+daybook is an independent open-source project. It is not built, endorsed,
+sponsored by, or affiliated with Anthropic. "Claude" and "Claude Code" are
+trademarks of Anthropic, referred to here only to describe what this tool reads.
 
 ## Licence
 

@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/claude-code-daybook/internal/config"
-	"github.com/tndigitalmark/claude-code-daybook/internal/model"
+	"github.com/tndigitalmark/daybook/internal/config"
+	"github.com/tndigitalmark/daybook/internal/model"
 )
 
 func path(cfg config.Config) string { return filepath.Join(cfg.StateDir(), "open.json") }
