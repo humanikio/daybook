@@ -266,16 +266,40 @@ func Run(force bool) error {
 	if len(list) > 0 && len(allRepos) > 0 {
 		if real := authorsSeen(allRepos); len(real) > 0 && !anyMatch(list, real) {
 			fmt.Println()
-			warn("none of those have committed in these repos recently")
-			note("git records these instead:")
-			for _, a := range real {
+			warn("none of those have committed in these folders recently")
+			note("git records these:")
+			for i, a := range real {
+				if i == 8 {
+					note("  …and %d more", len(real)-8)
+					break
+				}
 				note("  %s", a)
 			}
-			if strings.ToLower(ask(in, "      use those instead? [Y/n]: ", "y")) != "n" {
-				cfg.Identity.Authors = emailsOf(real)
-				ok("counting commits by %s", strings.Join(cfg.Identity.Authors, " and "))
+			fmt.Println()
+
+			// Only offer to adopt the list wholesale when it is plainly one
+			// person's. On a shared repo it is everybody who has touched it,
+			// and accepting it would quietly count a colleague's work as yours
+			// — the precise thing identity.authors exists to prevent.
+			if len(real) <= 2 {
+				if strings.ToLower(ask(in, "      use those instead? [Y/n]: ", "y")) != "n" {
+					cfg.Identity.Authors = emailsOf(real)
+					ok("counting commits by %s", strings.Join(cfg.Identity.Authors, " and "))
+				}
 			} else {
-				note("keeping it — `daybook scan` will tell you if nothing matches")
+				note("that is more than one person, so pick your own rather than")
+				note("taking the list — a colleague's commits are not your work")
+				again := ask(in, "      commit email(s), comma separated: ", email)
+				var picked []string
+				for _, e := range strings.Split(again, ",") {
+					if e = strings.TrimSpace(e); e != "" {
+						picked = append(picked, e)
+					}
+				}
+				if len(picked) > 0 {
+					cfg.Identity.Authors = picked
+					ok("counting commits by %s", strings.Join(picked, " and "))
+				}
 			}
 		}
 	}
@@ -636,13 +660,22 @@ func splitOutput(root string) (parent, name string) {
 // "nobody committed in the last 24 hours" is not evidence that an address is
 // wrong.
 func authorsSeen(repos []vcs.Repo) []string {
+	// Keyed on the EMAIL, not the whole "Name <email>" string. The same person
+	// commits under different names across repos, and listing them twice makes
+	// a one-person machine look like a team.
 	seen := map[string]bool{}
 	var out []string
 	since := time.Now().AddDate(0, 0, -30)
 	for _, r := range repos {
 		for _, a := range vcs.Authors(r.Root, since, time.Now()) {
-			if !seen[a] {
-				seen[a] = true
+			k := strings.ToLower(a)
+			if i := strings.Index(a, "<"); i >= 0 {
+				if j := strings.Index(a[i:], ">"); j > 0 {
+					k = strings.ToLower(a[i+1 : i+j])
+				}
+			}
+			if !seen[k] {
+				seen[k] = true
 				out = append(out, a)
 			}
 		}
@@ -663,18 +696,25 @@ func anyMatch(want []string, seen []string) bool {
 	return false
 }
 
-// emailsOf turns "Name <addr>" into addr, so the stored filter is the thing
-// git actually matches on.
+// emailsOf turns "Name <addr>" into addr, deduplicated.
+//
+// One address routinely appears under several names — a handle in one repo and
+// a full name in another — and without folding those together the filter ends
+// up holding the same email three times.
 func emailsOf(authors []string) []string {
+	seen := map[string]bool{}
 	var out []string
 	for _, a := range authors {
+		e := a
 		if i := strings.Index(a, "<"); i >= 0 {
 			if j := strings.Index(a[i:], ">"); j > 0 {
-				out = append(out, a[i+1:i+j])
-				continue
+				e = a[i+1 : i+j]
 			}
 		}
-		out = append(out, a)
+		if k := strings.ToLower(e); !seen[k] {
+			seen[k] = true
+			out = append(out, e)
+		}
 	}
 	return out
 }
