@@ -35,6 +35,27 @@ gh run watch --repo humanikio/daybook \
 The gates run **first**, on purpose. Failing after six cross-compiles and a
 signing pass burns three minutes to report something knowable in ten seconds.
 
+## How the changelog is matched
+
+The gate looks for a heading whose second word is the tag:
+
+```
+## v0.1.2            ✓
+## v0.1.2            ✓   (trailing whitespace tolerated)
+## v0.1.2 — notes    ✓   (anything after the version is yours)
+## V0.1.2            ✗   (tags are lowercase v)
+```
+
+Trailing whitespace is invisible in an editor and would be a maddening way to
+lose a release, so it is stripped. The version itself is matched exactly.
+
+**CI cannot check that a section exists**, because it does not know what the
+next tag will be. What it does check, on every push, is that the file is well
+formed: every heading is a version, no version appears twice, and no version
+has a heading with nothing under it. Those are where the mistakes actually are,
+and finding them on a PR costs nothing — finding them at tag time costs a
+deleted tag and a re-release.
+
 ## The gates, and why they exist
 
 **A tag with no changelog section fails.** The release page is where the
@@ -75,6 +96,18 @@ git tag -d v0.1.2 && git push origin :refs/tags/v0.1.2
 Nothing is published until the last step, so a failed run leaves no release
 behind — but **never move a tag that already published**. Anyone who pinned it
 gets different code under the same name. Cut the next patch instead.
+
+## On the file growing
+
+It grows, and that is the point — it is the history. Newest first, so the part
+anyone reads is at the top, and the release workflow only ever extracts one
+section, so length costs nothing at build time.
+
+The alternative is what a sibling project here does: keep the notes in the
+README that ships with the release, and drop old sections as they age. That
+file stays short, and the history is gone. It also warns rather than fails when
+a section is missing — with the result that **13 of its 16 releases published a
+generic body**. A warning in a job log that already reads ✓ is invisible.
 
 ## Versioning
 

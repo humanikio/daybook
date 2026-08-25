@@ -39,3 +39,36 @@ jobs:
             if ($errs) { $errs | ForEach-Object { $_.Message }; exit 1 }
             "install.ps1: ok"
           '
+
+      # CI cannot know what the next tag will be, so it cannot check that the
+      # section exists. It can check that the file is WELL FORMED, which is
+      # where the mistakes actually are — a typo in a heading, or a section
+      # with a title and no body. Finding those here costs a PR; finding them
+      # at tag time costs a deleted tag and a re-release.
+      - name: Changelog is well formed
+        shell: bash
+        run: |
+          set -eu
+          fail=0
+          prev=""
+          while IFS= read -r line; do
+            case "$line" in "## "*) ;; *) continue ;; esac
+            ver="$(printf '%s' "$line" | awk '{print $2}')"
+            case "$ver" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *) echo "::error file=CHANGELOG.md::heading is not a version: $line"; fail=1; continue ;;
+            esac
+            if [ "$ver" = "$prev" ]; then
+              echo "::error file=CHANGELOG.md::$ver appears twice"; fail=1
+            fi
+            body="$(awk -v want="$ver" '
+                      g && /^## / { exit }
+                      $1 == "##" && $2 == want { g = 1; next }
+                      g { print }
+                    ' CHANGELOG.md | tr -d '[:space:]')"
+            if [ -z "$body" ]; then
+              echo "::error file=CHANGELOG.md::$ver has a heading and no body"; fail=1
+            fi
+            prev="$ver"
+          done < CHANGELOG.md
+          [ "$fail" -eq 0 ] && echo "changelog ok" || exit 1

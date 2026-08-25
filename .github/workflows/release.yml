@@ -58,11 +58,23 @@ jobs:
           # A release must say what it is. The release page is where the install
           # docs point and where anyone deciding whether to upgrade looks —
           # publishing a fallback body there is worse than not publishing.
-          if ! awk -v want="## ${TAG}" '$0 == want { found=1 } END { exit !found }' CHANGELOG.md; then
+          # Trailing whitespace is invisible in an editor and would fail an
+          # exact match, which is a maddening way to lose a release. Leading
+          # "## " and the tag are required; anything after the tag is not.
+          if ! awk -v want="${TAG}" '
+                { sub(/[[:space:]]+$/, "") }
+                $1 == "##" && $2 == want { found = 1 }
+                END { exit !found }
+              ' CHANGELOG.md; then
             echo "::error title=No changelog section::CHANGELOG.md has no \"## ${TAG}\" heading. Add one and re-tag."
             exit 1
           fi
-          body=$(awk -v want="## ${TAG}" '$0==want{g=1;next} g&&/^## /{exit} g{print}' CHANGELOG.md)
+          body=$(awk -v want="${TAG}" '
+                   { line = $0; sub(/[[:space:]]+$/, "", line) }
+                   g && /^## / { exit }
+                   $1 == "##" && $2 == want { g = 1; next }
+                   g { print line }
+                 ' CHANGELOG.md)
           if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
             echo "::error title=Empty changelog section::\"## ${TAG}\" exists but says nothing."
             exit 1
@@ -146,9 +158,9 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
-          awk -v want="## ${TAG}" '
-            $0 == want { grab = 1; next }
+          awk -v want="${TAG}" '
             grab && /^## / { exit }
+            $1 == "##" && $2 == want { grab = 1; next }
             grab { print }
           ' CHANGELOG.md > notes.body || true
 
