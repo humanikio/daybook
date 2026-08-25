@@ -91,6 +91,39 @@ often as you like.
 
 ---
 
+## Written to be handed to someone else
+
+The top of every report is **what shipped**, grouped by capability rather than
+by commit — because fourteen commits that together let you write a SQL
+transform on an ingest hook are one thing that happened, not fourteen.
+
+```markdown
+**You can now test an ingest transform against payloads that have actually
+arrived, pick which ones to run it against, and see how old each one is.**
+
+readRecentRawPayloads.ts reads live ingested rows alongside stored test sends,
+collectSamples.ts merges the two and accepts an explicit list of payload ids,
+and the controller returns provenance per sample. The frontend adds
+TransformPayloadPicker.tsx, a multi-select modelled on the key mapping editor.
+
+*Look at:*
+- `src/dataPlane/services/sources/sqlHook/collectSamples.ts`
+- `src/app/(workspace)/…/sources/[sourceId]/transform/page.tsx`
+
+`api@7d26888f` · `web@0949b796` on **main**
+```
+
+Plain language first, then the mechanism for whoever maintains it, then the
+files and the branch. **Every commit appears in exactly one entry** — a day
+with sixty commits does not get five bullet points.
+
+Work with no user-facing surface still gets an entry, flagged `Internal`, so
+readers skip on the flag rather than on silence.
+
+And a section for what nobody else can see yet — unpushed commits with their
+subjects, and uncommitted files, per branch. A count says something is
+missing; the subjects say what.
+
 ## What it's for
 
 Your commit log records what landed. It does not record what happened, and the

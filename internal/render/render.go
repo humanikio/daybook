@@ -74,6 +74,29 @@ func Markdown(d model.Day, cfg config.Config) string {
 		}
 	}
 
+	if len(d.Shipped) > 0 {
+		b.WriteString("## What shipped\n\n")
+		for _, it := range d.Shipped {
+			if it.Internal {
+				continue // grouped below, so the reader hits the visible work first
+			}
+			writeShipped(&b, it)
+		}
+		var internal []model.ShippedItem
+		for _, it := range d.Shipped {
+			if it.Internal {
+				internal = append(internal, it)
+			}
+		}
+		if len(internal) > 0 {
+			b.WriteString("### Internal\n\n")
+			b.WriteString("*No user-facing surface — refactors, docs, tooling.*\n\n")
+			for _, it := range internal {
+				writeShipped(&b, it)
+			}
+		}
+	}
+
 	// ---- what shipped, by business or repo ----
 	if t.Commits > 0 {
 		byGroup := map[string]*group{}
@@ -232,16 +255,33 @@ func Markdown(d model.Day, cfg config.Config) string {
 	}
 	if len(risky) > 0 {
 		sort.Slice(risky, func(i, j int) bool { return risky[i].Ahead > risky[j].Ahead })
-		b.WriteString("## Not off this machine\n\n")
-		b.WriteString("| repo | branch | unpushed | uncommitted |\n|---|---|--:|--:|\n")
+		b.WriteString("## Still on this machine\n\n")
+		b.WriteString("*Work nobody else can see yet.*\n\n")
 		for _, r := range risky {
 			br := r.Branch
 			if br == "" {
-				br = "detached"
+				br = "detached HEAD"
 			}
-			fmt.Fprintf(&b, "| %s | %s | %d | %d |\n", r.Repo, br, r.Ahead, r.Dirty)
+			// The subjects, not just the count. "3 unpushed" is a number
+			// nobody can act on; the subjects are what a teammate would need
+			// to know is coming.
+			if r.Ahead > 0 {
+				fmt.Fprintf(&b, "**%s** — %s on `%s`, not pushed\n\n",
+					r.Repo, plural(r.Ahead, "commit", "commits"), br)
+				for _, s := range r.AheadSubjects {
+					fmt.Fprintf(&b, "- %s\n", code(s))
+				}
+				b.WriteString("\n")
+			}
+			if r.Dirty > 0 {
+				fmt.Fprintf(&b, "**%s** — %s uncommitted on `%s`\n\n",
+					r.Repo, plural(r.Dirty, "file", "files"), br)
+				for _, f := range r.DirtyFiles {
+					fmt.Fprintf(&b, "- %s\n", code(f))
+				}
+				b.WriteString("\n")
+			}
 		}
-		b.WriteString("\n")
 	}
 
 	if len(d.ClosedToday) > 0 {
@@ -296,6 +336,29 @@ func Markdown(d model.Day, cfg config.Config) string {
 		fmt.Fprintf(&b, "---\n\n*%d transcript line(s) could not be parsed. The format is undocumented and moves between Claude Code versions; run `daybook verify` for detail.*\n", d.ParseErrors)
 	}
 	return b.String()
+}
+
+// writeShipped renders one capability: what it is in plain language, how it
+// works for whoever has to maintain it, and where to look.
+func writeShipped(b *strings.Builder, it model.ShippedItem) {
+	fmt.Fprintf(b, "**%s**\n\n", it.What)
+	if it.How != "" {
+		fmt.Fprintf(b, "%s\n\n", it.How)
+	}
+	if len(it.Where) > 0 {
+		b.WriteString("*Look at:*\n")
+		for _, w := range it.Where {
+			fmt.Fprintf(b, "- `%s`\n", w)
+		}
+		b.WriteString("\n")
+	}
+	if len(it.Commits) > 0 {
+		branch := it.Branch
+		if branch == "" {
+			branch = "?"
+		}
+		fmt.Fprintf(b, "<sub>`%s` on **%s**</sub>\n\n", strings.Join(it.Commits, "` · `"), branch)
+	}
 }
 
 type group struct {
@@ -377,6 +440,15 @@ func totalTools(s model.Stream) int {
 		n += v
 	}
 	return n
+}
+
+// code renders a value inside a markdown code span.
+//
+// Commit subjects are written by people and routinely contain backticks — this
+// tool's own do — which close the span early and leave the rest as prose. U+2018
+// looks near enough and cannot terminate anything.
+func code(s string) string {
+	return "`" + strings.ReplaceAll(s, "`", "\u2018") + "`"
 }
 
 func clip(s string, n int) string {

@@ -141,6 +141,25 @@ func Status(root string, fetch bool) model.RepoState {
 	}
 	if d, err := run(root, "status", "--porcelain"); err == nil {
 		st.Dirty = countLines(d)
+		for i, l := range strings.Split(strings.TrimRight(d, "\n"), "\n") {
+			if i >= 8 || len(l) < 4 {
+				break
+			}
+			st.DirtyFiles = append(st.DirtyFiles, strings.TrimSpace(l))
+		}
+	}
+	// What the unpushed commits ARE. A count says something is missing; the
+	// subjects say what, which is the difference between a warning and
+	// something a teammate can act on.
+	if st.Ahead > 0 {
+		if out, err := run(root, "log", "@{u}..HEAD", "--pretty=format:%h %s"); err == nil {
+			for i, l := range strings.Split(strings.TrimSpace(out), "\n") {
+				if i >= 10 || l == "" {
+					break
+				}
+				st.AheadSubjects = append(st.AheadSubjects, l)
+			}
+		}
 	}
 	return st
 }
@@ -152,9 +171,13 @@ func Status(root string, fetch bool) model.RepoState {
 func Log(root string, since, until time.Time, authors []string) ([]model.Commit, error) {
 	args := []string{
 		"log", "--all", "--no-merges",
+		// --source names the ref each commit was reached from, in one pass.
+		// `branch --contains` per commit is the alternative and it is a
+		// process spawn per commit.
+		"--source",
 		"--since", since.Format(time.RFC3339),
 		"--until", until.Format(time.RFC3339),
-		"--pretty=format:\x01%H\x02%aI\x02%an <%ae>\x02%s",
+		"--pretty=format:\x01%H\x02%aI\x02%an <%ae>\x02%S\x02%s",
 		"--numstat",
 	}
 	out, err := run(root, args...)
@@ -164,6 +187,10 @@ func Log(root string, since, until time.Time, authors []string) ([]model.Commit,
 
 	pushed := pushedSet(root, since)
 	name := filepath.Base(root)
+	current := "HEAD"
+	if b, err := run(root, "symbolic-ref", "--short", "HEAD"); err == nil {
+		current = strings.TrimSpace(b)
+	}
 
 	var commits []model.Commit
 	var cur *model.Commit
@@ -177,7 +204,7 @@ func Log(root string, since, until time.Time, authors []string) ([]model.Commit,
 		if strings.HasPrefix(line, "\x01") {
 			flush()
 			parts := strings.Split(strings.TrimPrefix(line, "\x01"), "\x02")
-			if len(parts) < 4 {
+			if len(parts) < 5 {
 				continue
 			}
 			at, err := time.Parse(time.RFC3339, parts[1])
@@ -190,7 +217,8 @@ func Log(root string, since, until time.Time, authors []string) ([]model.Commit,
 			c := model.Commit{
 				Repo:       name,
 				SHA:        shortSHA(parts[0]),
-				Subject:    parts[3],
+				Branch:     shortRef(parts[3], current),
+				Subject:    parts[4],
 				Author:     parts[2],
 				At:         at.Local(),
 				Pushed:     pushed[parts[0]],
@@ -284,6 +312,20 @@ func matchesAuthor(author string, authors []string) bool {
 		}
 	}
 	return false
+}
+
+// shortRef turns refs/heads/main into main, and leaves anything else alone.
+func shortRef(s, fallback string) string {
+	for _, p := range []string{"refs/heads/", "refs/remotes/", "refs/tags/"} {
+		s = strings.TrimPrefix(s, p)
+	}
+	// --all can reach a commit through a remote ref first, giving names like
+	// "origin/HEAD" that no reader recognises as a branch. Prefer the local
+	// branch the repo is actually on.
+	if s == "" || s == "HEAD" || strings.HasSuffix(s, "/HEAD") {
+		return fallback
+	}
+	return strings.TrimPrefix(s, "origin/")
 }
 
 func shortSHA(s string) string {

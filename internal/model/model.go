@@ -69,6 +69,10 @@ type Commit struct {
 	Files   []string  `json:"files,omitempty"`
 	Added   int       `json:"added"`
 	Deleted int       `json:"deleted"`
+	// Branch the commit was reached from. A report meant for a teammate has to
+	// say where to look, and "main" and "a feature branch" are different
+	// answers to that.
+	Branch string `json:"branch,omitempty"`
 
 	// Pushed means reachable from a remote-tracking ref. Verified not to need a
 	// fetch: `git push` updates the local tracking ref, so this is accurate for
@@ -190,6 +194,29 @@ type Narration struct {
 	CarryForward string `json:"carryForward,omitempty"`
 }
 
+// ShippedItem is one thing that changed, described for someone who was not
+// there.
+//
+// Grouped by CAPABILITY rather than by commit: fourteen commits that together
+// let you write a SQL transform on an ingest hook are one thing that happened,
+// and listing them individually tells a reader nothing they can use.
+type ShippedItem struct {
+	// What — one sentence, plain language, from the point of view of whoever
+	// uses it. "You can now write a SQL transform on an ingest hook", not
+	// "Added executeSQL to the transform controller".
+	What string `json:"what"`
+	// How — a few sentences for a teammate who has to work on it.
+	How string `json:"how"`
+	// Where — the files that matter, so nobody has to go looking.
+	Where []string `json:"where,omitempty"`
+	// Commits — repo@sha, and the branch they landed on.
+	Commits []string `json:"commits,omitempty"`
+	Branch  string   `json:"branch,omitempty"`
+	// Internal marks work with no user-facing surface — a refactor, docs,
+	// tests. Still reported, but a reader can skip the section.
+	Internal bool `json:"internal,omitempty"`
+}
+
 // DayNarration is the synthesis pass, run over the per-stream summaries only —
 // never over raw transcripts.
 type DayNarration struct {
@@ -253,6 +280,14 @@ type RepoState struct {
 	Ahead     int    `json:"ahead"` // commits not on the remote
 	Dirty     int    `json:"dirty"` // changed paths in the working tree
 	HeadSHA   string `json:"headSha,omitempty"`
+
+	// AheadSubjects is what those unpushed commits actually are.
+	//
+	// A count tells a teammate something is missing; the subjects tell them
+	// what. "3 unpushed" is a number nobody can act on.
+	AheadSubjects []string `json:"aheadSubjects,omitempty"`
+	// DirtyFiles is a sample of the uncommitted paths, same reasoning.
+	DirtyFiles []string `json:"dirtyFiles,omitempty"`
 }
 
 // Totals are day-level, deduped.
@@ -289,6 +324,10 @@ type Day struct {
 	Totals Totals      `json:"totals"`
 
 	Narration *DayNarration `json:"dayNarration,omitempty"`
+
+	// Shipped is the day read as capabilities rather than as streams — the
+	// section you can hand to somebody who was not here.
+	Shipped []ShippedItem `json:"shipped,omitempty"`
 
 	// OpenItems is the ledger as it stands after this day; ClosedToday is what
 	// this run closed, printed with its evidence so a wrong close is visible

@@ -64,13 +64,17 @@ seen the underlying detail and must not pretend otherwise.
 Return ONLY a JSON object:
 {"shape":"","moved":"","carrying":""}
 
-shape     2-3 sentences on how the day actually went. This is the one place a
-          cross-stream connection can be drawn - say so when several streams
-          were really the same piece of work.
-moved     What genuinely advanced.
-carrying  What is live going into tomorrow.
+shape     TWO SENTENCES AT MOST on the character of the day. Not a list of what
+          happened — a "what shipped" section already covers that, in full, and
+          repeating it here buries the one thing this field is for: saying when
+          several streams were really the same piece of work.
+moved     One or two sentences. The single most consequential thing that is now
+          true that was not true yesterday.
+carrying  One or two sentences. What is unfinished and will be picked up.
 
 RULES
+- Be SHORT. Every one of these is read before the detail below it, and a long
+  one stops being read at all.
 - Never restate counts, times or shas.
 - Never invent anything not in the summaries.
 - No praise, no grading. Record, not report card.`
@@ -144,6 +148,12 @@ func Run(ctx context.Context, cfg config.Config, day *model.Day, carry map[strin
 
 	if res.Streams == 0 {
 		return res, nil
+	}
+
+	// What shipped, read as capabilities. This is the section a teammate reads,
+	// so it runs even when the day-level synthesis fails.
+	if err := Shipped(ctx, p, day); err != nil {
+		res.Fabrications = append(res.Fabrications, "what-shipped: "+err.Error())
 	}
 
 	// Synthesis runs over the per-stream summaries only — never the transcripts.

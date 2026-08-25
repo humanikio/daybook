@@ -129,11 +129,4 @@ func judgeFacts(cands []model.OpenItem, day model.Day) string {
 	return b.String()
 }
 
-func extractArray(s string) string {
-	start := strings.IndexByte(s, '[')
-	end := strings.LastIndexByte(s, ']')
-	if start < 0 || end <= start {
-		return ""
-	}
-	return s[start : end+1]
-}
+func extractArray(s string) string { return narrate.ExtractArray(s) }
