@@ -98,17 +98,17 @@ by commit — because fourteen commits that together let you write a SQL
 transform on an ingest hook are one thing that happened, not fourteen.
 
 ```markdown
-**You can now test an ingest transform against payloads that have actually
-arrived, pick which ones to run it against, and see how old each one is.**
+**You can now test an ingest transform against payloads that actually
+arrived, choose which ones to run it against, and see how old each is.**
 
-readRecentRawPayloads.ts reads live ingested rows alongside stored test sends,
-collectSamples.ts merges the two and accepts an explicit list of payload ids,
-and the controller returns provenance per sample. The frontend adds
-TransformPayloadPicker.tsx, a multi-select modelled on the key mapping editor.
+`readRecentPayloads.ts` reads live rows alongside stored test sends,
+`collectSamples.ts` merges the two and accepts an explicit list of payload
+ids, and the controller returns provenance per sample. The frontend adds
+`PayloadPicker.tsx`, a multi-select modelled on the field mapping editor.
 
 *Look at:*
-- `src/dataPlane/services/sources/sqlHook/collectSamples.ts`
-- `src/app/(workspace)/…/sources/[sourceId]/transform/page.tsx`
+- `src/ingest/services/collectSamples.ts`
+- `src/app/sources/[sourceId]/transform/page.tsx`
 
 `api@7d26888f` · `web@0949b796` on **main**
 ```

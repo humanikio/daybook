@@ -15,7 +15,7 @@ func TestFitKeepsBothEnds(t *testing.T) {
 	}
 	// Middle-elision, because the ends carry the meaning: lopping the tail off
 	// two long addresses leaves rows that look identical.
-	if got[:6] != "tylert" {
+	if got[:6] != "first." {
 		t.Errorf("lost the head: %q", got)
 	}
 	if r := []rune(got); string(r[len(r)-6:]) != "ub.com" {
