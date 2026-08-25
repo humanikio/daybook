@@ -530,6 +530,11 @@ func narrateDay(cfg config.Config, day *model.Day) error {
 		fmt.Printf(" · %d failed", res.Failed)
 	}
 	fmt.Printf(" · %d open, %d closed today\n", len(day.OpenItems), len(closed))
+	for _, f := range res.Fabrications {
+		// Name it. A rejection you cannot inspect is indistinguishable from a
+		// gate that is too strict, and the two need opposite responses.
+		fmt.Fprintf(os.Stderr, "    rejected — %s\n", f)
+	}
 	return nil
 }
 

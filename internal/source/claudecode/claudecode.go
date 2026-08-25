@@ -37,6 +37,8 @@ func (Source) Name() string { return "claude-code" }
 // record is one line of a transcript. Every field is optional.
 type record struct {
 	Type        string  `json:"type"`
+	Subtype     string  `json:"subtype"`
+	DurationMs  int64   `json:"durationMs"`
 	Timestamp   string  `json:"timestamp"`
 	SessionID   string  `json:"sessionId"`
 	CWD         string  `json:"cwd"`
@@ -64,10 +66,12 @@ type usage struct {
 }
 
 type block struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type    string          `json:"type"`
+	Text    string          `json:"text"`
+	Name    string          `json:"name"`
+	Input   json.RawMessage `json:"input"`
+	IsError bool            `json:"is_error"`
+	Content json.RawMessage `json:"content"`
 }
 
 type toolInput struct {
@@ -206,9 +210,32 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 		buckets[ts.Unix()/600] = struct{}{}
 
 		switch r.Type {
+		case "system":
+			// Claude Code records how long each turn actually took. That is a
+			// better answer than counting buckets, and it is already measured —
+			// there is no reason to estimate a number the file contains.
+			if r.Subtype == "turn_duration" && r.DurationMs > 0 {
+				st.WorkedMillis += r.DurationMs
+			}
+
 		case "user":
 			// Only a real person typing counts as a prompt. Tool results and
 			// task notifications also arrive as "user" records.
+			if r.Message != nil {
+				// Tool results arrive as user records. Count the ones that came
+				// back as errors before filtering to human prompts.
+				for _, b := range contentBlocks(r.Message.Content) {
+					if b.Type != "tool_result" || !b.IsError {
+						continue
+					}
+					st.Failures++
+					if len(st.Failed) < 12 && keepPrompts {
+						if t := squash(resultText(b.Content)); t != "" {
+							st.Failed = append(st.Failed, red.Do(clip(t, 300)))
+						}
+					}
+				}
+			}
 			if r.Origin == nil || r.Origin.Kind != "human" || r.Message == nil {
 				continue
 			}
@@ -302,6 +329,35 @@ func contentBlocks(raw json.RawMessage) []block {
 		return nil
 	}
 	return bs
+}
+
+// resultText handles a tool_result body being a string or a block array.
+func resultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var bs []block
+	if json.Unmarshal(raw, &bs) != nil {
+		return ""
+	}
+	var out []string
+	for _, b := range bs {
+		if b.Text != "" {
+			out = append(out, b.Text)
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 var ws = regexp.MustCompile(`\s+`)

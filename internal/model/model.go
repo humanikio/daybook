@@ -128,6 +128,25 @@ type Stream struct {
 
 	OutputTokens int `json:"outputTokens"`
 
+	// WorkedMillis is the summed duration of the turns in this stream, taken
+	// from the transcript rather than inferred.
+	//
+	// ActiveMinutes counts ten-minute buckets containing any message, which
+	// treats a two-minute question and a forty-minute build identically. Turn
+	// durations are what actually elapsed. Per stream they are exact; they are
+	// NOT summed across streams, because concurrent sessions would double-count
+	// the same wall clock.
+	WorkedMillis int64 `json:"workedMillis,omitempty"`
+
+	// Failures counts tool results that came back as errors, and Failed keeps a
+	// few of them.
+	//
+	// A report that lists only what shipped describes half a day. Commands that
+	// failed are what the time went into, and they are the part nobody writes
+	// down afterwards.
+	Failures int      `json:"failures,omitempty"`
+	Failed   []string `json:"failed,omitempty"`
+
 	// Agent marks a session driven by something other than a human at a
 	// keyboard (entrypoint sdk-cli, or a non-human origin). Recorded, reported
 	// separately, and kept out of your totals — on one reference day there were

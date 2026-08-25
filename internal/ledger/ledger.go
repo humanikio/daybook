@@ -64,12 +64,40 @@ func key(streamID, text string) string {
 }
 
 // Merge folds a day's narrated open items into the ledger.
+//
+// Narrating the same day twice must not double the ledger. Item identity is a
+// hash of the stream and the text, and a model rephrases — "not yet run against
+// a large file" and "has not been tested on a large file" are the same concern
+// with different hashes. Re-narrating one day went from 36 items to 110.
+//
+// So a re-narration REPLACES what that day contributed: drop the still-open
+// items this day opened for these streams, then add the new ones. Items from
+// other days are untouched, and a closed item stays closed — closing is a
+// decision, not an observation to be recomputed.
 func Merge(items []model.OpenItem, day model.Day) []model.OpenItem {
+	date := day.WindowEnd.Format("2006-01-02")
+
+	narrated := map[string]bool{}
+	for _, s := range day.Streams {
+		if s.Narration != nil {
+			narrated[s.ID] = true
+		}
+	}
+	if len(narrated) > 0 {
+		var kept []model.OpenItem
+		for _, it := range items {
+			if it.Status == "open" && it.Opened == date && narrated[it.StreamID] {
+				continue // this run is about to restate it
+			}
+			kept = append(kept, it)
+		}
+		items = kept
+	}
+
 	byID := map[string]int{}
 	for i, it := range items {
 		byID[it.ID] = i
 	}
-	date := day.WindowEnd.Format("2006-01-02")
 
 	for _, s := range day.Streams {
 		if s.Narration == nil {

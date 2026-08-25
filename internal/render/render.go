@@ -110,6 +110,12 @@ func Markdown(d model.Day, cfg config.Config) string {
 		var facts []string
 		facts = append(facts, "`"+string(s.State)+"`")
 		facts = append(facts, fmt.Sprintf("%d prompts", len(s.Prompts)))
+		if s.WorkedMillis > 0 {
+			facts = append(facts, dur(int(s.WorkedMillis/60000))+" working")
+		}
+		if s.Failures > 0 {
+			facts = append(facts, fmt.Sprintf("%d failed", s.Failures))
+		}
 		if s.OutputTokens > 0 {
 			facts = append(facts, fmt.Sprintf("%dk tokens", s.OutputTokens/1000))
 		}
@@ -178,6 +184,38 @@ func Markdown(d model.Day, cfg config.Config) string {
 			fmt.Fprintf(&b, "- `%s@%s` %s %s\n", c.Repo, c.SHA, c.At.Format("15:04"), c.Subject)
 		}
 		b.WriteString("\n")
+	}
+
+	// What broke. A report listing only what shipped describes half a day —
+	// failures are where the time went, and the part nobody writes down.
+	var broke []model.Stream
+	totalFail := 0
+	for _, s := range d.Streams {
+		if s.Agent || s.Failures == 0 {
+			continue
+		}
+		totalFail += s.Failures
+		broke = append(broke, s)
+	}
+	if totalFail > 0 {
+		fmt.Fprintf(&b, "## What broke (%d)\n\n", totalFail)
+		sort.Slice(broke, func(i, j int) bool { return broke[i].Failures > broke[j].Failures })
+		for _, s := range broke {
+			fmt.Fprintf(&b, "**%s** · %d\n\n", s.Title, s.Failures)
+			for _, f := range s.Failed {
+				if len(s.Failed) > 3 {
+					break
+				}
+				fmt.Fprintf(&b, "- `%s`\n", clip(f, 140))
+			}
+			if len(s.Failed) > 3 {
+				for _, f := range s.Failed[:3] {
+					fmt.Fprintf(&b, "- `%s`\n", clip(f, 140))
+				}
+				fmt.Fprintf(&b, "- *…%d more*\n", len(s.Failed)-3)
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	var risky []model.RepoState

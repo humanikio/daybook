@@ -17,6 +17,13 @@ type Result struct {
 	Streams  int
 	Rejected int // failed the verification gate
 	Failed   int // provider error
+
+	// Fabrications records what each rejection actually claimed.
+	//
+	// "1 rejected by the verification gate" is not enough to act on: it does
+	// not say whether the model invented a commit or whether the gate is
+	// wrong. Both are worth knowing and they call for opposite fixes.
+	Fabrications []string
 }
 
 const streamSystem = `You write one entry in a private engineering daybook: a factual record of what
@@ -116,6 +123,8 @@ func Run(ctx context.Context, cfg config.Config, day *model.Day, carry map[strin
 			// fabricated identifier is caught wherever in the response it landed.
 			if bad := Verify(raw, facts); bad != "" {
 				res.Rejected++
+				res.Fabrications = append(res.Fabrications,
+					fmt.Sprintf("%s: claimed %q", day.Streams[i].Title, bad))
 				return
 			}
 			var n model.Narration
@@ -177,6 +186,13 @@ func streamFacts(s model.Stream, carry string) string {
 		b.WriteString("\nWHAT THE ASSISTANT REPORTED:\n")
 		for _, n := range lastN(s.Notes, 60) {
 			fmt.Fprintf(&b, "- [%s] %s\n", n.At.Format("15:04"), clip(n.Text, 900))
+		}
+	}
+
+	if len(s.Failed) > 0 {
+		b.WriteString("\nCOMMANDS THAT FAILED:\n")
+		for _, f := range s.Failed {
+			fmt.Fprintf(&b, "- %s\n", clip(f, 300))
 		}
 	}
 
