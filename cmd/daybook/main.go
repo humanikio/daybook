@@ -107,7 +107,8 @@ Usage:
                                      as often as you like. Seconds on its own;
                                      minutes when narration is on, so
                                      --no-narrate skips it for a quick pass.
-  daybook day [date]                 Print a report. date, "today" or "yesterday"
+  daybook day [date]                 Read a report. date, "today" or "yesterday".
+                                     Builds today's if there is not one yet.
   daybook week [date]                Rollup for the week containing date
   daybook backfill [7 | 2w]          Build the days from before you installed
                                      it. --from/--to for an exact range,
@@ -677,12 +678,71 @@ func cmdDay(args []string) error {
 	if err != nil {
 		return err
 	}
-	b, err := os.ReadFile(filepath.Join(cfg.OutputsDir(), date+".md"))
-	if err != nil {
-		return fmt.Errorf("no report for %s — run `daybook scan` first", date)
+	today := time.Now().Format("2006-01-02")
+	path := filepath.Join(cfg.OutputsDir(), date+".md")
+
+	b, readErr := os.ReadFile(path)
+	if readErr != nil {
+		// Asking for TODAY and finding nothing is not an error, it is a first
+		// run. Build it — facts only, because `day` reads as a read and should
+		// not quietly spend two minutes of quota.
+		if date == today {
+			fmt.Fprintln(os.Stderr, "no report yet — scanning (facts only)…")
+			day, err := scan(cfg)
+			if err != nil {
+				return err
+			}
+			carryNarration(cfg, &day)
+			if err := writeDay(cfg, day); err != nil {
+				return err
+			}
+			if b, err = os.ReadFile(path); err != nil {
+				return err
+			}
+		} else {
+			// `scan` only ever builds today, so telling someone to run it for
+			// last Tuesday sends them in a circle.
+			return fmt.Errorf("no report for %s — build it with:  daybook backfill --from %s --to %s",
+				date, date, date)
+		}
 	}
+
 	fmt.Print(string(b))
+
+	// Freshness goes to STDERR so `daybook day > report.md` stays clean
+	// markdown. A report read at five in the afternoon that was built at
+	// eleven the night before is a picture of a different day, and nothing in
+	// the file says so.
+	if gen, ok := generatedAt(cfg, date); ok {
+		age := time.Since(gen)
+		switch {
+		case date == today && age > 30*time.Minute:
+			fmt.Fprintf(os.Stderr, "\n  built %s ago · `daybook scan` to refresh\n", roughAge(age))
+		case date != today:
+			fmt.Fprintf(os.Stderr, "\n  built %s\n", gen.Format("Mon 2 Jan 15:04"))
+		}
+	}
 	return nil
+}
+
+// generatedAt reads when the report was actually produced.
+func generatedAt(cfg config.Config, date string) (time.Time, bool) {
+	day, err := loadDay(cfg, date)
+	if err != nil || day.Generated.IsZero() {
+		return time.Time{}, false
+	}
+	return day.Generated, true
+}
+
+func roughAge(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 func cmdVerify(args []string) error {
