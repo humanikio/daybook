@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/daybook/internal/config"
-	"github.com/tndigitalmark/daybook/internal/model"
-	"github.com/tndigitalmark/daybook/internal/source"
+	"github.com/humanikio/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/model"
+	"github.com/humanikio/daybook/internal/source"
 )
 
 type Source struct{}

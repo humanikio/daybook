@@ -1,4 +1,4 @@
-module github.com/tndigitalmark/daybook
+module github.com/humanikio/daybook
 
 go 1.24
 

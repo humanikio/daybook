@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/daybook/internal/model"
-	"github.com/tndigitalmark/daybook/internal/narrate"
+	"github.com/humanikio/daybook/internal/model"
+	"github.com/humanikio/daybook/internal/narrate"
 )
 
 const judgeSystem = `You decide whether items in an engineering ledger were finished today.

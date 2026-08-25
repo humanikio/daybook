@@ -10,7 +10,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/tndigitalmark/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/config"
 )
 
 // DefaultModel is what the API provider uses unless narrate.model says

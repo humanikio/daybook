@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/daybook/internal/config"
-	"github.com/tndigitalmark/daybook/internal/svc"
-	"github.com/tndigitalmark/daybook/internal/vcs"
+	"github.com/humanikio/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/svc"
+	"github.com/humanikio/daybook/internal/vcs"
 )
 
 // colour is off unless the terminal will actually render it. NO_COLOR and a

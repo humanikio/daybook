@@ -23,7 +23,7 @@ import (
 
 	"github.com/kardianos/service"
 
-	"github.com/tndigitalmark/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/config"
 )
 
 // Name is the service identifier. Kept boring: it becomes a plist filename, a

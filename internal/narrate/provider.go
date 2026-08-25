@@ -20,7 +20,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/tndigitalmark/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/config"
 )
 
 // Provider produces text from a prompt. No tools, no filesystem, no state.

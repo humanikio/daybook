@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tndigitalmark/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/config"
 )
 
 func at(s string) time.Time {

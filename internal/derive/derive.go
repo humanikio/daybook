@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tndigitalmark/daybook/internal/config"
-	"github.com/tndigitalmark/daybook/internal/model"
-	"github.com/tndigitalmark/daybook/internal/vcs"
+	"github.com/humanikio/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/model"
+	"github.com/humanikio/daybook/internal/vcs"
 )
 
 // Input is everything a day is built from.

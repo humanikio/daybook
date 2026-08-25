@@ -37,7 +37,7 @@ three embed bugs the same run surfaced.
 ## Install
 
 ```sh
-go install github.com/a-handle/daybook/cmd/daybook@latest
+go install github.com/humanikio/daybook/cmd/daybook@latest
 ```
 
 Needs Go 1.24+ and `git`. `claude` and `gh` are optional.
