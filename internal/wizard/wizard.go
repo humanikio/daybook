@@ -146,7 +146,7 @@ func Run(force bool) error {
 
 	def := defaultRepoRoot()
 	root := def
-	if interactive {
+	if stdinIsInteractive() {
 		root = ask(in, fmt.Sprintf("      repo roots [%s]: ", def), def)
 	}
 	for _, r := range strings.Split(root, ",") {
@@ -176,7 +176,7 @@ func Run(force bool) error {
 		defAuthor = authors[0]
 	}
 	email := defAuthor
-	if interactive {
+	if stdinIsInteractive() {
 		email = ask(in, fmt.Sprintf("      your commit email [%s]: ", defAuthor), defAuthor)
 	}
 	if email != "" {
@@ -190,7 +190,7 @@ func Run(force bool) error {
 	step(3, total, "When should the summary run?")
 
 	at := cfg.Schedule.At
-	if interactive {
+	if stdinIsInteractive() {
 		at = ask(in, fmt.Sprintf("      time [%s]: ", cfg.Schedule.At), cfg.Schedule.At)
 		if _, err := time.Parse("15:04", at); err != nil {
 			warn("%q is not HH:MM — keeping %s", at, cfg.Schedule.At)
@@ -200,7 +200,7 @@ func Run(force bool) error {
 	cfg.Schedule.At = at
 	ok("daily at %s", at)
 
-	if interactive {
+	if stdinIsInteractive() {
 		if strings.ToLower(ask(in, "      run it late if the machine was asleep then? [Y/n]: ", "y")) == "n" {
 			cfg.Schedule.CatchUp = false
 		}
@@ -246,7 +246,15 @@ func Run(force bool) error {
 // Follows the same rule as everything else here: it asks, it never assumes, and
 // declining leaves a working tool behind — `daybook scan` by hand is a complete
 // workflow.
-func offerService(in *bufio.Reader, cfg config.Config, interactive bool) {
+func offerService(in *bufio.Reader, cfg config.Config, _ bool) {
+	// Deliberately re-checked here rather than trusting the caller's captured
+	// value. `interactive` is sampled once at the top of Run, but /dev/null is
+	// a character device, so it starts out true and only becomes false when the
+	// first read hits EOF. Trusting the stale bool made a non-interactive
+	// `daybook init --force < /dev/null` install a real LaunchAgent that
+	// nobody asked for — the one action in this wizard with a side effect
+	// outside its own config directory.
+	interactive := stdinIsInteractive()
 	for _, c := range svc.Conflicts() {
 		warn("a system-level registration exists and cannot work: %s", c)
 		note("it runs as root, so it cannot read your keychain, your git identity,")
