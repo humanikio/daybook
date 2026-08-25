@@ -6,7 +6,9 @@ publishes, with a fallback body and a warning in the job log.
 
 ## v0.1.1
 
-Documentation only — the binaries are identical to v0.1.0.
+Documentation only. No code changed; the binaries differ from v0.1.0 by the
+version string the release injects with `-ldflags -X main.version` and nothing
+else.
 
 The README now leads with the report rather than with an install command. The
 part worth showing is one capability entry: plain language first, then the
