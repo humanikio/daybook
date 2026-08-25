@@ -28,6 +28,7 @@ import (
 	"github.com/humanikio/daybook/internal/narrate"
 	"github.com/humanikio/daybook/internal/render"
 	"github.com/humanikio/daybook/internal/schedule"
+	"github.com/humanikio/daybook/internal/selfupdate"
 	"github.com/humanikio/daybook/internal/source"
 	"github.com/humanikio/daybook/internal/source/claudecode"
 	"github.com/humanikio/daybook/internal/svc"
@@ -80,6 +81,8 @@ func main() {
 		err = cmdSchedule(args)
 	case "config":
 		err = cmdConfig(args)
+	case "upgrade", "update":
+		err = cmdUpgrade()
 	case "verify":
 		err = cmdVerify(args)
 	case "version", "--version", "-v":
@@ -138,6 +141,7 @@ Usage:
                                      login narration uses.
   daybook verify                     Check config, sources, repos, parse health,
                                      scheduler and narration in one pass
+  daybook upgrade                    Check whether a newer release exists
   daybook version
 
 Flags: --config PATH, --window DURATION, --stdout
@@ -743,6 +747,41 @@ func roughAge(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// cmdUpgrade reports whether a newer release exists. It never replaces the
+// binary — see internal/selfupdate.
+func cmdUpgrade() error {
+	res, err := selfupdate.Check(context.Background(), version)
+	if err != nil {
+		// A failed check is UNKNOWN, not up to date. Exiting zero here would let
+		// a scripted `daybook upgrade` read silence as current.
+		return fmt.Errorf("could not check for updates: %w", err)
+	}
+	switch {
+	case res.Local:
+		// Deliberately not "update available" — that implies the numbers were
+		// compared and this one lost. They cannot be: a source build's version
+		// says what it was aiming at, not what it contains.
+		fmt.Printf("daybook %s is a local build, not a release.\n\n", res.Current)
+		fmt.Printf("Its version cannot be compared against published releases — it names\n")
+		fmt.Printf("what it was built from, not what is in it. The newest release is %s.\n\n", res.Latest)
+		fmt.Println("Unless you are working on daybook, install the release:")
+		fmt.Println("  " + selfupdate.InstallCmd())
+	case res.Available:
+		fmt.Printf("update available: %s → %s\n\n", res.Current, res.Latest)
+		fmt.Println("  " + selfupdate.InstallCmd())
+		fmt.Println()
+		// The scheduler keeps the code it started with, so an upgrade without
+		// this leaves the old binary serving tonight's run.
+		if installed, running, _ := svc.Status(config.Config{}); installed && running {
+			fmt.Println("then restart the scheduler so it picks up the new binary:")
+			fmt.Println("  daybook service restart")
+		}
+	default:
+		fmt.Printf("daybook %s is the latest release.\n", res.Current)
+	}
+	return nil
 }
 
 func cmdVerify(args []string) error {
