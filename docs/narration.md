@@ -8,20 +8,34 @@ It is off by default, and optional in the strongest sense — **the report is
 written to disk before narration is ever invoked**. Narration failing, timing
 out, or being refused costs you a few paragraphs, never the day.
 
-## Turning it on
+## When it runs
 
-```yaml
-narrate:
-  enabled: true       # narrate automatically after every scan
-  provider: auto      # auto | cli | api | off
-```
+Three ways in, and they are independent:
 
-Or per-run, leaving config alone:
+| how | when it narrates |
+|---|---|
+| `daybook scan --narrate` | that run only. Config untouched. |
+| `daybook narrate [date]` | on demand, over a scan that already happened |
+| `narrate.enabled: true` | **every** scan, including the scheduled one |
+
+**It does not run on a plain `daybook scan`.** That is deliberate: a scan is
+cheap, idempotent and offline, and something you might run ten times while
+poking at a config. Narration spends quota and takes minutes.
+
+For the nightly report — the one you actually read — you almost certainly want
+it always on:
 
 ```sh
-daybook scan --narrate
-daybook narrate              # narrate a scan that already ran
-daybook narrate 2026-08-23
+daybook config set narrate.enabled true
+```
+
+The scheduler re-reads config every tick, so that takes effect on the next run
+with no restart.
+
+To check what will happen:
+
+```sh
+daybook verify        # …narration  available (provider auto, enabled=true)
 ```
 
 ## Providers

@@ -237,10 +237,13 @@ count is already right for anything sent from this machine.
 ## Prose summaries (optional)
 
 ```sh
-daybook scan --narrate
+daybook scan --narrate                     # this run only
+daybook config set narrate.enabled true    # every run, including the nightly
+daybook narrate 2026-08-24                 # after the fact
 ```
 
-Adds what git structurally cannot: what you were trying to do, what actually
+A plain `daybook scan` never narrates — it is cheap, offline and idempotent,
+and narration is neither. Adds what git structurally cannot: what you were trying to do, what actually
 happened, **decisions no commit records**, and what's still unproven.
 
 Two providers. `cli` (default) spawns the `claude` you're already signed in

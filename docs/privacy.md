@@ -24,15 +24,29 @@ anywhere except under `output.root`.
 
 ## What is written
 
+daybook uses **two** directories, and only one of them holds your words.
+
 ```
-<output.root>/
+~/.daybook/                        CONFIG ONLY
+  config.yaml                      settings — no prompt text
+
+<output.root>/                     default ~/Desktop/daybook
   outputs/YYYY-MM-DD.md            report — prompt text, file paths, commits
   raw/YYYY-MM-DD.<machine>.json    the same, structured
+  state/open.json                  the ledger
   state/pins.json                  commit → stream
   state/last-run.json              timestamps only
 ```
 
-All files are `0600`. `output.root` defaults to `~/.daybook`.
+All files are `0600`.
+
+The output directory defaults somewhere **visible** on purpose — a report you
+never open is not a report. The trade is that a visible folder holding your
+prompt history is also visible during a screen share. Move it if that matters:
+
+```sh
+daybook config set output.root ~/Documents/daybook
+```
 
 **Do not put `output.root` inside a public repository.** A `.gitignore` is one
 `git add -f` away from publishing your prompt history. If you want the record

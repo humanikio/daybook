@@ -97,6 +97,14 @@ design day and a build day, and one number reports neither.
 
 macOS: `~/Library/Logs/daybook.*.log`. Elsewhere: `~/.daybook/`.
 
+**After upgrading the binary, restart the service.** Config is re-read every
+tick, so `daybook schedule 22:00` needs no restart — but the running process
+keeps the code it started with:
+
+```sh
+daybook service restart
+```
+
 ```sh
 daybook serve       # foreground, same loop, logs to the terminal
 ```

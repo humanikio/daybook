@@ -52,9 +52,17 @@ preference for when it lands. Until then, run `daybook scan` whenever you like.
 
 ### [4/4] Writing config
 
-Writes `~/.daybook/config.yaml` and creates `outputs/`, `raw/` and `state/`
-under `output.root`. Everything is `0600`, and the directory holds your prompt
-text — keep it private.
+Writes `~/.daybook/config.yaml`, and creates `outputs/`, `raw/` and `state/`
+under `output.root` — which defaults to `~/Desktop/daybook`.
+
+**Those are two different places on purpose.** Settings live in a dotfile you
+never need to look at; reports land somewhere you actually will. Everything is
+`0600`, and the output directory holds your prompt text, so move it if a folder
+on your Desktop is the wrong place for that:
+
+```sh
+daybook config set output.root ~/Documents/daybook
+```
 
 ## Daily use
 

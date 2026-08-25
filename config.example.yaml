@@ -24,21 +24,27 @@ window:
 
 schedule:
   at: "23:30"
-  days: []            # empty = every day
+  days: []             # empty = every day
   catch_up: true         # asleep at `at`? run on wake rather than skip the day
 
 identity:
-  authors: ["you@example.com"]
+  authors: ["you@example.com", "you@users.noreply.github.com"]
   machine: ""          # empty = hostname; namespaces output files
 
 output:
-  root: "~/.daybook"
+  # Where the reports land. Somewhere you will actually open — a report
+  # you never see is not a report. Note it holds prompt text, so a
+  # visible folder is also a visible folder during a screen share.
+  root: "~/Desktop/daybook"
   # The bar for repos with no remote, where "shipped" is undefined.
   no_remote: committed      # committed | exclude
 
 narrate:
-  enabled: false      # v2. uses the claude you are already signed in with
+  enabled: false      # uses the claude you are already signed in with
+  provider: "auto"        # auto | cli | api | off
   binary: ""
+  model: ""           # empty = the API provider's default
+  effort: ""          # low | medium | high | xhigh | max (api only)
   timeout: "5m"
 
 privacy:
