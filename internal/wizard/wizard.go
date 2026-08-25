@@ -460,9 +460,15 @@ func Run(force bool) error {
 	offerService(in, cfg, interactive)
 
 	fmt.Printf("\n  %snext%s\n", bold, reset)
-	fmt.Printf("    daybook scan     run one now against the last %s\n", cfg.Window.Length)
-	fmt.Printf("    daybook day      read it\n")
-	fmt.Printf("    daybook verify   check everything is wired up\n\n")
+	// Backfill goes first. Someone who has just finished setup has an empty
+	// daybook and no reason to know that last month is already on disk —
+	// leading with `scan` gets them one day and the impression that is all
+	// there is.
+	fmt.Printf("    daybook backfill 7   build last week from what is already on disk\n")
+	fmt.Printf("    daybook scan         today, against the last %s\n", cfg.Window.Length)
+	fmt.Printf("    daybook day          read it\n\n")
+	fmt.Printf("    daybook config edit  change any of this later\n")
+	fmt.Printf("    daybook verify       check everything is wired up\n\n")
 	return nil
 }
 
