@@ -8,7 +8,7 @@ import "testing"
 func TestVerifyRejectsFabrications(t *testing.T) {
 	facts := `COMMITS ATTRIBUTED TO THIS STREAM:
 - api@7eb0f964 Fix two defects found by running the flow end to end (+40/-6)
-- web@a1b2c3d4 Render the SQL Nova proposes (+355/-1)
+- web@a1b2c3d4 Render the query the assistant proposes (+355/-1)
 FILES: internal/vcs/vcs.go`
 
 	cases := []struct {

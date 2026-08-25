@@ -6,30 +6,38 @@ Daily work reports built from your Claude Code sessions and your git history.
 
 ```
 Monday, 24 August 2026
-10.0h active · 10 streams · 180 prompts · 30 commits +5,724/-1,058 · 6 repos
+6.4h active · 4 streams · 92 prompts · 17 commits +2,140/-431 · 3 repos
 
 ## Summary
-The day ran on two tracks that never really touched: getting Acme into a shape
-someone could buy, and a long stretch of api work. A theme repeated across
-nearly everything: the written artifact ran ahead of the verified one.
+Most of the day went to the CSV importer, which turned out to be two problems:
+the parser, and a mapping UI that made the parser's failures unreadable. The
+Postgres upgrade was opened, scoped, and put down again once the replica lag
+turned out to be unrelated.
 
-### Sun 18:27–Mon 13:42 · Calendar booking embeds        shipped
-Get the booking page embeddable so the marketing site hosts booking inline.
+### Sun 21:10–Mon 15:42 · CSV import mapping          shipped
+Get bulk contact import working end to end, including the column mapping step.
 
-Built the three embed modes, then found by actually opening the modal that
-required-question toggles and time entry were unusable; fixed those alongside
-three embed bugs the same run surfaced.
+Streamed the parse instead of buffering it after a 40MB file exhausted memory
+on staging. Then found by importing a real customer export that unmapped
+columns were silently dropped rather than reported — fixed that, and reworked
+the mapping table to show which columns had no destination.
 
-- **Decided.** Embed config stays stateless: the snippet carries its own
-  configuration rather than storing it server-side.
-- **Open.** Shipped to main untested. TRUST_PROXY_HOPS=1 needs prod confirmation.
+- **Decided.** Import is idempotent per chunk rather than per file, so a
+  half-finished run resumes instead of starting over.
+- **Open.** Shipped to main, not yet run against a file over 100MB.
 
-**Shipped** (4 exact, 8 inferred)
-- web@f9064af3  Add booking page embeds: inline, popup and floating  +1372/-162
+**Shipped** (3 exact, 5 inferred)
+- api@4f2a91cd    Stream the CSV parse instead of buffering it     +312/-88
+- web@8b30ee14    Show columns that map to nothing                 +204/-31
+
+### 11:20–13:05 · Replica lag investigation           no ship
+Work out why the read replica fell 90 seconds behind overnight.
+
+Traced it to a nightly vacuum, not to the import work. No code change needed.
 
 ## Not off this machine
-| repo     | branch | unpushed | uncommitted |
-| gateway | main   |        5 |          75 |
+| repo | branch | unpushed | uncommitted |
+| api  | main   |        2 |           7 |
 ```
 
 ---

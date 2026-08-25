@@ -1,6 +1,6 @@
 // Package wizard is the guided first-run setup.
 //
-// DESIGN RULES, taken from a sibling project because they were learned the hard way:
+// DESIGN RULES, each one learned the hard way:
 //   - It never installs anything. It PRINTS the command. Executing an
 //     installer on someone's machine is not a thing a config-driven tool does.
 //   - It never writes credentials. Claude Code owns its own; this only checks.

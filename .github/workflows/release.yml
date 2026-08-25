@@ -2,8 +2,8 @@ name: release
 
 # Cross-compile, sign, and publish on a version tag.
 #
-# Unlike a sibling project there is no dist repo: daybook's source is public, so the
-# release lives on this repository and github.token is sufficient. No PAT, no
+# There is no separate dist repo: daybook's source is public, so the release
+# lives on this repository and github.token is sufficient. No PAT, no
 # cross-repo secret.
 on:
   push:
