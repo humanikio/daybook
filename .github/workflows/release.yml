@@ -1,11 +1,20 @@
 name: release
 
+# Cross-compile, sign, and publish on a version tag.
+#
+# Unlike a sibling project there is no dist repo: daybook's source is public, so the
+# release lives on this repository and github.token is sufficient. No PAT, no
+# cross-repo secret.
 on:
   push:
     tags: ['v*']
 
 permissions:
   contents: write
+  # Keyless cosign signs against a short-lived OIDC token from GitHub. Without
+  # id-token: write the build succeeds and the SIGN step fails — silently
+  # unsigned, which is the worst outcome because the release still publishes.
+  id-token: write
 
 jobs:
   release:
@@ -17,13 +26,37 @@ jobs:
           go-version: '1.24'
           cache: true
 
-      # Plain cross-compilation rather than a release tool. The binary is one
-      # CGO-free Go program, so this is a loop — and a loop anyone can read
-      # beats a config file for a tool they would have to install to audit.
-      - name: build
+      # Guard the artifacts before building them. An installer that does not
+      # parse is worse than a missing one: it is fetched by `curl | sh`, so the
+      # error surfaces on a stranger's machine, mid-pipe, with half of it
+      # already executed.
+      - name: Check installers parse
+        shell: bash
+        run: |
+          set -eu
+          sh -n install.sh
+          echo "install.sh: ok"
+          pwsh -NoProfile -Command '
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path ./install.ps1), [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) { $errs | ForEach-Object { $_.Message }; exit 1 }
+            "install.ps1: ok"
+          '
+
+      - name: Verify the tree it is about to ship
+        run: |
+          go vet ./...
+          go test ./...
+
+      # Plain cross-compilation rather than a release tool. One CGO-free Go
+      # program, so this is a loop — and a loop anyone can read beats a config
+      # file they would have to install something to audit.
+      - name: Build
         env:
           CGO_ENABLED: '0'
         run: |
+          set -eu
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME}"
           for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
@@ -36,14 +69,93 @@ jobs:
               -ldflags "-s -w -X main.version=${VERSION#v}" \
               -o "$out" ./cmd/daybook
           done
-          cp install.sh install.ps1 dist/
-          (cd dist && sha256sum * > checksums.txt)
+
+      - name: Sign (cosign keyless)
+        uses: sigstore/cosign-installer@v3
+      - name: Sign binaries
+        run: |
+          set -eu
+          for f in dist/daybook-*; do
+            case "$f" in *.sig) continue ;; esac
+            cosign sign-blob --yes --output-signature "$f.sig" "$f"
+          done
           ls -la dist
 
-      - name: release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage installers and checksums
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          set -eu
+          cp install.sh install.ps1 dist/
+          (cd dist && sha256sum daybook-* install.sh install.ps1 > checksums.txt)
+
+      # THE RELEASE PAGE IS WHERE THE INSTALL DOCS POINT. An empty body there is
+      # a reader landing on an asset list with nothing telling them what changed
+      # or how to install it.
+      #
+      # A MISSING SECTION DOES NOT FAIL THE RELEASE. The binaries are built and
+      # signed by this point, and blocking a correct artifact over prose is the
+      # wrong trade. It falls back to something useful and shouts in the job log
+      # — the failure being fixed is a SILENT blank, so the fallback must never
+      # be silent either.
+      - name: Build release notes
+        shell: bash
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME}"
+          awk -v want="## ${TAG}" '
+            $0 == want { grab = 1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' CHANGELOG.md > notes.body || true
+
+          if [ -s notes.body ] && grep -q '[^[:space:]]' notes.body; then
+            echo "release notes: $(wc -l < notes.body) lines from CHANGELOG.md"
+          else
+            echo "::warning title=No release notes::CHANGELOG.md has no \"## ${TAG}\" section. Publishing a fallback body."
+            {
+              echo "Binaries, checksums and cosign signatures for \`${TAG}\`."
+              echo
+              echo "Notes for this version were not written before the tag. See the"
+              echo "[README](https://github.com/humanikio/daybook#readme) for what this does."
+            } > notes.body
+          fi
+
+          {
+            echo
+            echo "---"
+            echo
+            echo '## Install'
+            echo
+            echo '**macOS / Linux**'
+            echo '```sh'
+            echo 'curl -fsSL https://github.com/humanikio/daybook/releases/latest/download/install.sh | sh'
+            echo '```'
+            echo
+            echo '**Windows**'
+            echo '```powershell'
+            echo 'irm https://github.com/humanikio/daybook/releases/latest/download/install.ps1 | iex'
+            echo '```'
+            echo
+            echo 'Then `daybook init`.'
+            echo
+            echo '## Verifying a download'
+            echo
+            echo '```sh'
+            echo 'sha256sum -c checksums.txt --ignore-missing'
+            echo
+            echo 'cosign verify-blob \'
+            echo '  --certificate-identity-regexp "^https://github.com/humanikio/daybook/" \'
+            echo '  --certificate-oidc-issuer https://token.actions.githubusercontent.com \'
+            echo '  --signature daybook-darwin-arm64.sig daybook-darwin-arm64'
+            echo '```'
+          } >> notes.body
+
+          echo "--- body ---"; cat notes.body
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: notes.body
+          files: dist/*
+          fail_on_unmatched_files: true

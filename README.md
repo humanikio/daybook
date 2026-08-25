@@ -54,6 +54,18 @@ irm https://github.com/humanikio/daybook/releases/latest/download/install.ps1 | 
 go install github.com/humanikio/daybook/cmd/daybook@latest
 ```
 
+Every release binary is signed with [cosign](https://docs.sigstore.dev/) keyless
+signing and shipped with checksums. To verify before running:
+
+```sh
+sha256sum -c checksums.txt --ignore-missing
+
+cosign verify-blob \
+  --certificate-identity-regexp "^https://github.com/humanikio/daybook/" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --signature daybook-darwin-arm64.sig daybook-darwin-arm64
+```
+
 Installs to `~/.local/bin` — user-level, no sudo, because daybook reads your
 transcripts and your git identity and runs as you. Needs `git`; `claude` and
 `gh` are optional.

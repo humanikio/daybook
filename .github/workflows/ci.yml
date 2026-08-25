@@ -23,3 +23,19 @@ jobs:
         run: |
           out="$(gofmt -l .)"
           if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi
+
+      # The same check the release runs. Here it fails a PR; there it would fail
+      # after the tag already exists, which is a worse place to find out.
+      - name: Check installers parse
+        shell: bash
+        run: |
+          set -eu
+          sh -n install.sh
+          echo "install.sh: ok"
+          pwsh -NoProfile -Command '
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path ./install.ps1), [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) { $errs | ForEach-Object { $_.Message }; exit 1 }
+            "install.ps1: ok"
+          '
