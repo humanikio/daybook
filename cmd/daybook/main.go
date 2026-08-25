@@ -263,13 +263,13 @@ func cmdWeek(args []string) error {
 	if err != nil {
 		return err
 	}
-	when := time.Now()
-	if rest := fs.Args(); len(rest) > 0 {
-		if t, err := time.ParseInLocation("2006-01-02", rest[0], time.Local); err == nil {
-			when = t
-		} else {
-			return fmt.Errorf("want a date like 2026-08-24, got %q", rest[0])
-		}
+	d, err := resolveDate(fs.Args())
+	if err != nil {
+		return err
+	}
+	when, err := time.ParseInLocation("2006-01-02", d, time.Local)
+	if err != nil {
+		return err
 	}
 	mon, sun := render.WeekBounds(when)
 
@@ -442,9 +442,9 @@ func cmdNarrate(args []string) error {
 	if err != nil {
 		return err
 	}
-	date := time.Now().Format("2006-01-02")
-	if rest := fs.Args(); len(rest) > 0 {
-		date = rest[0]
+	date, err := resolveDate(fs.Args())
+	if err != nil {
+		return err
 	}
 	day, err := loadDay(cfg, date)
 	if err != nil {
@@ -513,6 +513,27 @@ func carryForward(cfg config.Config, date string) map[string]string {
 		}
 	}
 	return out
+}
+
+// resolveDate accepts a date, "today", "yesterday", or nothing.
+//
+// The aliases exist because the two things anyone types are "what did I do
+// today" and "what did I do yesterday", and making someone compute a date to
+// ask the second one is a small daily insult.
+func resolveDate(args []string) (string, error) {
+	if len(args) == 0 {
+		return time.Now().Format("2006-01-02"), nil
+	}
+	switch strings.ToLower(args[0]) {
+	case "today":
+		return time.Now().Format("2006-01-02"), nil
+	case "yesterday":
+		return time.Now().AddDate(0, 0, -1).Format("2006-01-02"), nil
+	}
+	if _, err := time.Parse("2006-01-02", args[0]); err != nil {
+		return "", fmt.Errorf("want a date like 2026-08-24, or today/yesterday — got %q", args[0])
+	}
+	return args[0], nil
 }
 
 func loadDay(cfg config.Config, date string) (model.Day, error) {
@@ -587,9 +608,9 @@ func cmdDay(args []string) error {
 	if err != nil {
 		return err
 	}
-	date := time.Now().Format("2006-01-02")
-	if rest := fs.Args(); len(rest) > 0 {
-		date = rest[0]
+	date, err := resolveDate(fs.Args())
+	if err != nil {
+		return err
 	}
 	b, err := os.ReadFile(filepath.Join(cfg.OutputsDir(), date+".md"))
 	if err != nil {
