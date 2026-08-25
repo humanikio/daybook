@@ -4,6 +4,22 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section still
 publishes, with a fallback body and a warning in the job log.
 
+## v0.1.1
+
+Documentation only — the binaries are identical to v0.1.0.
+
+The README now leads with the report rather than with an install command. The
+part worth showing is one capability entry: plain language first, then the
+mechanism for whoever maintains it, then the files and the branch. No amount
+of prose about that format lands the way one example does.
+
+Two figures in it were also corrected. "40% exact attribution" had been
+measured under a different repo set and a broken author filter and had quietly
+stopped being true; measured again across eight real days it is **55% overall,
+ranging 28-67% by day**. A range is the honest shape anyway — a single number
+implies a stability this does not have. Repo count and scan time were stale
+too, and both were re-measured.
+
 ## v0.1.0
 
 First release.
