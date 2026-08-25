@@ -79,6 +79,17 @@ func probeCLI(cfg config.Config) error {
 	return nil
 }
 
+// Check reports whether narration would work, without spending a request.
+//
+// It cannot prove a sign-in — `claude doctor` exits 0 either way, and the only
+// real proof is a call that costs money or quota. It proves the reachable
+// parts: a binary on PATH, or credentials the SDK will find. The rest is
+// reported at the moment it fails, with a message naming the remedy.
+func Check(cfg config.Config) error {
+	_, err := Resolve(cfg)
+	return err
+}
+
 // cliProvider spawns Claude Code headlessly.
 //
 // It holds no credentials: the CLI uses whatever login is already on this

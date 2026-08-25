@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/humanikio/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/narrate"
 	"github.com/humanikio/daybook/internal/svc"
 	"github.com/humanikio/daybook/internal/vcs"
 )
@@ -81,7 +82,7 @@ func ok(f string, a ...any)   { fmt.Printf("      %s %s\n", mark(true, false), f
 func warn(f string, a ...any) { fmt.Printf("      %s %s\n", mark(false, true), fmt.Sprintf(f, a...)) }
 func note(f string, a ...any) { fmt.Printf("        %s%s%s\n", dim, fmt.Sprintf(f, a...), reset) }
 
-const total = 6
+const total = 7
 
 // Run walks setup and writes the config.
 func Run(force bool) error {
@@ -328,6 +329,23 @@ func Run(force bool) error {
 	}
 	cfg.Output.Root = filepath.Join(parent, name)
 
+	// mkdir -p cannot tell a new folder from a misspelt one, and both end with
+	// reports landing somewhere nobody looks. ~/destkop/daybookReports is a real
+	// example from setting this up.
+	if absParent := config.Expand(parent); absParent != "" {
+		if fi, err := os.Stat(absParent); err != nil || !fi.IsDir() {
+			warn("%s does not exist yet", parent)
+			if near := nearbyDir(absParent); near != "" {
+				note("did you mean %s%s%s?", bold, near, reset)
+			}
+			if strings.ToLower(ask(in, "      create it anyway? [y/N]: ", "n")) != "y" {
+				parent, _ = splitOutput(config.Default().Output.Root)
+				cfg.Output.Root = filepath.Join(parent, name)
+				note("using %s instead", cfg.Output.Root)
+			}
+		}
+	}
+
 	abs := config.Expand(cfg.Output.Root)
 	existed := false
 	if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
@@ -362,7 +380,59 @@ func Run(force bool) error {
 	ok("reports → %s", cfg.OutputsDir())
 
 	// ---------------------------------------------------------------- 6
-	step(6, total, "Schedule it")
+	step(6, total, "Prose summaries")
+
+	fmt.Println()
+	note("Beyond the facts, daybook can write what you were trying to do,")
+	note("what actually happened, and decisions no commit records. It reads")
+	note("the day's derived facts — never your raw transcripts.")
+	fmt.Println()
+	note("  %s1%s  Claude Code     the login already on this machine. No key,", bold, reset)
+	note("                     no setup. Spends your Claude subscription quota.")
+	note("  %s2%s  Anthropic API   needs ANTHROPIC_API_KEY or `ant auth login`.", bold, reset)
+	note("                     Leaves your Claude quota alone. About $1 a day.")
+	note("  %s3%s  Not now         the report is complete without it, and", bold, reset)
+	note("                     `daybook config edit` turns it on later.")
+	fmt.Println()
+
+	switch strings.TrimSpace(ask(in, "      choose [1]: ", "1")) {
+	case "2":
+		cfg.Narrate.Enabled, cfg.Narrate.Provider = true, "api"
+	case "3":
+		cfg.Narrate.Enabled = false
+	default:
+		cfg.Narrate.Enabled, cfg.Narrate.Provider = true, "cli"
+	}
+
+	if cfg.Narrate.Enabled {
+		// Report whether it will WORK, not what the setting says. Turning it on
+		// does not sign you in, and step 1 could only confirm the binary exists
+		// — `claude doctor` exits 0 whether or not you are logged in, so this is
+		// the first honest moment to say so.
+		if err := narrate.Check(cfg); err != nil {
+			warn("%v", err)
+			if cfg.Narrate.Provider == "cli" {
+				note("run %sclaude%s once and sign in; narration starts working", bold, reset)
+				note("on the next run with no further setup")
+			}
+		} else if cfg.Narrate.Provider == "cli" {
+			ok("Claude Code — using the login on this machine")
+			note("daybook stores no credentials of its own")
+			note("this spends the same quota your own sessions do")
+		} else {
+			ok("Anthropic API")
+		}
+		// Rewrite the config so the choice survives; it was written in step 5.
+		if err := os.WriteFile(path, config.Render(cfg), 0o600); err != nil {
+			return err
+		}
+	} else {
+		ok("off for now")
+		note("turn it on any time:  %sdaybook config edit%s", bold, reset)
+	}
+
+	// ---------------------------------------------------------------- 7
+	step(7, total, "Schedule it")
 	offerService(in, cfg, interactive)
 
 	fmt.Printf("\n  %snext%s\n", bold, reset)
@@ -495,6 +565,51 @@ func hasRepo(root string, depth int) bool {
 // device, so `daybook init < /dev/null` passes it and then EOFs on the first
 // read. Only an actual read tells you whether anyone is there.
 var eof bool
+
+// nearbyDir finds a sibling whose name differs only in case or by a
+// transposition — the shapes a typed path actually goes wrong in.
+func nearbyDir(missing string) string {
+	parent := filepath.Dir(missing)
+	want := strings.ToLower(filepath.Base(missing))
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if strings.EqualFold(n, want) || closeEnough(strings.ToLower(n), want) {
+			return filepath.Join(parent, n)
+		}
+	}
+	return ""
+}
+
+// closeEnough is true for one adjacent transposition — destkop for desktop.
+// Deliberately not a full edit distance: this only ever suggests, and a
+// suggestion that is usually wrong is worse than none.
+func closeEnough(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	diff := 0
+	for i := range a {
+		if a[i] != b[i] {
+			diff++
+		}
+	}
+	if diff != 2 {
+		return false
+	}
+	for i := 0; i < len(a)-1; i++ {
+		if a[i] != b[i] && a[i] == b[i+1] && a[i+1] == b[i] {
+			return true
+		}
+	}
+	return false
+}
 
 // splitOutput turns a stored output root back into the parent and folder name
 // the wizard asks for, so re-running it offers what you chose last time rather

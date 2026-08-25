@@ -64,6 +64,38 @@ on your Desktop is the wrong place for that:
 daybook config set output.root ~/Documents/daybook
 ```
 
+## Changing settings later
+
+`init` re-asks everything and overwrites answers you were happy with. For a
+single change:
+
+```sh
+daybook config edit                        # arrow through the settings
+daybook config set narrate.enabled true    # if you know the key
+daybook watch ~/clientwork                 # add a folder
+daybook schedule 22:00 --days mon,wed,fri
+```
+
+`config edit` needs a terminal. Everywhere else — a script, CI, a pipe — use
+`config set`, which takes the same values and validates them the same way.
+
+## Prose summaries
+
+Step 6 of `init` asks how they should be written:
+
+| | needs | costs |
+|---|---|---|
+| **Claude Code** | the `claude` login already on this machine | your Claude subscription quota |
+| **Anthropic API** | `ANTHROPIC_API_KEY`, or `ant auth login` | about $1 a day |
+| **Off** | nothing | the report is complete without it |
+
+daybook stores no credentials either way.
+
+**Being signed in is separate from turning it on.** `claude doctor` exits 0
+whether or not you are logged in, so nothing can verify it ahead of time — if
+you are logged out, narration says so and names the fix, and the deterministic
+report is already written by then.
+
 ## Daily use
 
 ```sh

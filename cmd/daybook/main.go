@@ -114,7 +114,9 @@ Usage:
                                      --days mon,wed,fri  (or "every")
                                      --catch-up true|false — run a slot missed
                                      while the machine was asleep
-  daybook config [set <key> <value>] Show the config, or change one value
+  daybook config                     Show the whole config
+  daybook config edit                Change settings interactively (arrow keys)
+  daybook config set <key> <value>   Change one value
 
   daybook narrate [date]             Add prose and reconcile the open ledger
   daybook open                       Work that has not finished proving itself

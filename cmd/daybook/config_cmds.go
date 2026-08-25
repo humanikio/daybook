@@ -249,8 +249,11 @@ func cmdConfig(args []string) error {
 		fmt.Print(string(config.Render(cfg)))
 		return nil
 	}
+	if rest[0] == "edit" {
+		return cmdConfigEdit(nil)
+	}
 	if rest[0] != "set" {
-		return fmt.Errorf("usage: daybook config [set <key> <value>]")
+		return fmt.Errorf("usage: daybook config [edit | set <key> <value>]")
 	}
 	if len(rest) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: daybook config set <key> <value>\n\nkeys:")

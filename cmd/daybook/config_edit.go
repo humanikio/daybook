@@ -1,0 +1,195 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/humanikio/daybook/internal/config"
+	"github.com/humanikio/daybook/internal/narrate"
+	"github.com/humanikio/daybook/internal/tui"
+	"github.com/humanikio/daybook/internal/vcs"
+)
+
+// `daybook config edit` — the settings people actually revisit.
+//
+// `config set` needs you to know the key name; `init` re-asks everything and
+// overwrites answers you were happy with. This is the middle: see what is set,
+// arrow to the one that is wrong, change it, leave.
+//
+// Every field writes through config.Save and re-validates, so an edit that
+// would produce an unloadable file is refused here rather than at next start.
+func cmdConfigEdit(args []string) error {
+	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
+	cfg, _, err := loadCfg(fs, args)
+	if err != nil {
+		return err
+	}
+	if !tui.Interactive() {
+		return fmt.Errorf("`config edit` needs a terminal — use `daybook config set <key> <value>`")
+	}
+
+	colour := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
+	fmt.Println()
+
+	for {
+		items := []tui.Item{
+			{Label: "Watching", Value: describeRoots(cfg)},
+			{Label: "Commit email", Value: orNone(strings.Join(cfg.Identity.Authors, ", "))},
+			{Label: "Runs at", Value: describeSchedule(cfg)},
+			{Label: "Catch up", Value: yesNo(cfg.Schedule.CatchUp)},
+			{Label: "Reports in", Value: cfg.Output.Root},
+			{Label: "Narration", Value: describeNarration(cfg)},
+			{Label: "Window", Value: cfg.Window.Length},
+			{Label: "Keep prompts", Value: yesNo(cfg.Privacy.KeepRawPrompts)},
+		}
+
+		i := tui.Select("daybook settings", items, colour)
+		if i < 0 {
+			fmt.Println("\nsaved.")
+			return nil
+		}
+		fmt.Println()
+
+		switch i {
+		case 0:
+			// A list, not a scalar. Point at the verbs that manage it rather
+			// than asking someone to hand-edit a comma-separated path list.
+			fmt.Println("  add:     daybook watch <path>")
+			fmt.Println("  remove:  daybook unwatch <path>")
+			fmt.Println()
+			continue
+		case 1:
+			cfg.Identity.Authors = splitCSV(tui.Prompt("commit email(s), comma separated",
+				strings.Join(cfg.Identity.Authors, ",")))
+		case 2:
+			v := tui.Prompt("time (HH:MM)", cfg.Schedule.At)
+			cfg.Schedule.At = v
+			d := tui.Prompt("days (mon,wed,fri — or 'every')", daysOrEvery(cfg))
+			if strings.EqualFold(d, "every") || strings.EqualFold(d, "all") {
+				cfg.Schedule.Days = nil
+			} else {
+				cfg.Schedule.Days = splitCSV(strings.ToLower(d))
+			}
+		case 3:
+			cfg.Schedule.CatchUp = !cfg.Schedule.CatchUp
+		case 4:
+			cfg.Output.Root = tui.Prompt("reports folder", cfg.Output.Root)
+			if err := os.MkdirAll(config.Expand(cfg.Output.Root), 0o700); err != nil {
+				fmt.Printf("  ! could not create it: %v\n\n", err)
+				continue
+			}
+		case 5:
+			chooseNarration(&cfg, colour)
+		case 6:
+			cfg.Window.Length = tui.Prompt("how far back each run looks", cfg.Window.Length)
+		case 7:
+			cfg.Privacy.KeepRawPrompts = !cfg.Privacy.KeepRawPrompts
+			if !cfg.Privacy.KeepRawPrompts {
+				fmt.Println("  prompt text will no longer be stored — counts and commits still are")
+			}
+		}
+
+		if err := cfg.Validate(); err != nil {
+			// Refuse and revert by reloading, so a bad answer cannot leave the
+			// file in a state that will not load next time.
+			fmt.Printf("  ! %v\n  (not saved)\n\n", err)
+			cfg, _ = config.Load(cfg.Path())
+			continue
+		}
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Println()
+	}
+}
+
+// chooseNarration is a menu rather than a free-text field: "auto|cli|api|off"
+// is a thing you have to already know, and the difference that matters is
+// which account pays.
+func chooseNarration(cfg *config.Config, colour bool) {
+	opts := []tui.Item{
+		{Label: "Claude Code", Value: "uses the login on this machine · spends your Claude quota"},
+		{Label: "Anthropic API", Value: "needs an API key · about $1/day · leaves your quota alone"},
+		{Label: "Off", Value: "the report is complete without it"},
+	}
+	switch tui.Select("How should prose summaries be written?", opts, colour) {
+	case 0:
+		cfg.Narrate.Enabled, cfg.Narrate.Provider = true, "cli"
+	case 1:
+		cfg.Narrate.Enabled, cfg.Narrate.Provider = true, "api"
+	case 2:
+		cfg.Narrate.Enabled = false
+	default:
+		return
+	}
+	fmt.Println()
+	// Report the real state, not the setting. Turning narration on does not
+	// make it work, and the gap between the two is a sign-in.
+	if cfg.Narrate.Enabled {
+		if _, err := narrate.Resolve(*cfg); err != nil {
+			fmt.Printf("  ! %v\n", err)
+		} else {
+			fmt.Println("  ✓ ready — every run will narrate")
+		}
+	} else {
+		fmt.Println("  narration off")
+	}
+	fmt.Println()
+}
+
+func describeRoots(cfg config.Config) string {
+	if len(cfg.Watch.Repos) == 0 {
+		return "nothing yet"
+	}
+	var ps []string
+	for _, r := range cfg.Watch.Repos {
+		ps = append(ps, r.Path)
+	}
+	return fmt.Sprintf("%s  (%d repos)", strings.Join(ps, ", "), len(vcs.Discover(cfg)))
+}
+
+func describeSchedule(cfg config.Config) string {
+	return cfg.Schedule.At + ", " + daysOrEvery(cfg)
+}
+
+func daysOrEvery(cfg config.Config) string {
+	if len(cfg.Schedule.Days) == 0 {
+		return "every day"
+	}
+	return strings.Join(cfg.Schedule.Days, ",")
+}
+
+func describeNarration(cfg config.Config) string {
+	if !cfg.Narrate.Enabled {
+		return "off"
+	}
+	switch cfg.Narrate.Provider {
+	case "api":
+		return "on · Anthropic API"
+	case "cli":
+		return "on · Claude Code"
+	default:
+		return "on · auto"
+	}
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+func orNone(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "not set — every commit counts as yours"
+	}
+	return s
+}
+
+var _ = filepath.Join
+var _ = strconv.Itoa
