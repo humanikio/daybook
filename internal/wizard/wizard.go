@@ -142,40 +142,87 @@ func Run(force bool) error {
 	}
 
 	// ---------------------------------------------------------------- 2
-	step(2, total, "What should we watch?")
+	step(2, total, "Where does your code live?")
+
+	fmt.Println()
+	note("daybook scans these folders for git repositories. Point it at")
+	note("wherever you keep projects — you can add more than one.")
+	fmt.Println()
+	note("Enter a path and press return. Leave it blank to finish.")
+	note("You can change this any time:  %sdaybook watch <path>%s", bold, reset)
+	fmt.Println()
 
 	def := defaultRepoRoot()
-	root := def
-	if stdinIsInteractive() {
-		root = ask(in, fmt.Sprintf("      repo roots [%s]: ", def), def)
-	}
-	for _, r := range strings.Split(root, ",") {
-		if r = strings.TrimSpace(r); r != "" {
-			cfg.Watch.Repos = append(cfg.Watch.Repos, config.RepoRoot{Path: r, Depth: 4})
+
+	for i := 1; ; i++ {
+		var prompt, fallback string
+		if i == 1 {
+			prompt = fmt.Sprintf("  %s%d%s   path [%s]: ", bold, i, reset, def)
+			fallback = def
+		} else {
+			prompt = fmt.Sprintf("  %s%d%s   path (blank to finish): ", bold, i, reset)
+			fallback = ""
+		}
+
+		entry := ask(in, prompt, fallback)
+		if strings.TrimSpace(entry) == "" {
+			if len(cfg.Watch.Repos) == 0 && i == 1 {
+				// Refusing to proceed with nothing would be worse than a root
+				// that finds nothing: the config is editable and `daybook watch`
+				// exists. But say what happened.
+				warn("no folders added — `daybook watch <path>` before your first scan")
+			}
+			break
+		}
+
+		abs := config.Expand(strings.TrimSpace(entry))
+		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
+			warn("%s is not a directory — skipped", entry)
+			i--
+			continue
+		}
+		if already(cfg, abs) {
+			warn("already added")
+			i--
+			continue
+		}
+
+		before := len(vcs.Discover(cfg))
+		cfg.Watch.Repos = append(cfg.Watch.Repos, config.RepoRoot{Path: strings.TrimSpace(entry), Depth: 4})
+		found := len(vcs.Discover(cfg)) - before
+		if found == 0 {
+			warn("no git repositories under there")
+			note("add it anyway, or try a parent folder")
+		} else {
+			ok("%d repositories", found)
+		}
+		if !stdinIsInteractive() {
+			break
 		}
 	}
-	t0 := time.Now()
-	repos := vcs.Discover(cfg)
-	ok("%d repos found (%dms)", len(repos), time.Since(t0).Milliseconds())
+
+	allRepos := vcs.Discover(cfg)
+	fmt.Println()
+	if len(cfg.Watch.Repos) > 0 {
+		ok("watching %s, %d repositories", plural(len(cfg.Watch.Repos), "folder"), len(allRepos))
+	}
 
 	noRemote := 0
-	for _, r := range repos {
+	for _, r := range allRepos {
 		if !vcs.Status(r.Root, false).HasRemote {
 			noRemote++
 		}
 	}
 	if noRemote > 0 {
-		warn("%d repo(s) have no remote", noRemote)
+		warn("%s no git remote", plural2(noRemote, "repository has", "repositories have"))
 		note("\"shipped\" means off this machine, so those have no bar to clear;")
-		note("output.no_remote=%q treats a commit as done for them", cfg.Output.NoRemote)
+		note("output.no_remote=%q counts a commit as done for them", cfg.Output.NoRemote)
 	}
 
+	fmt.Println()
 	authors := config.DetectAuthors()
 	defAuthor := strings.Join(authors, ",")
-	email := defAuthor
-	if stdinIsInteractive() {
-		email = ask(in, fmt.Sprintf("      your commit email [%s]: ", defAuthor), defAuthor)
-	}
+	email := ask(in, fmt.Sprintf("      your commit email [%s]: ", defAuthor), defAuthor)
 	var list []string
 	for _, e := range strings.Split(email, ",") {
 		if e = strings.TrimSpace(e); e != "" {
@@ -189,9 +236,6 @@ func Run(force bool) error {
 	case len(list) == 1:
 		ok("counting commits by %s", list[0])
 	default:
-		// More than one means this directory has a local identity override. Say
-		// so: the alternative is a filter that quietly excludes most of your
-		// work while still reporting a plausible number.
 		ok("counting commits by %s", strings.Join(list, " and "))
 		note("this directory has its own git identity — both are counted")
 	}
@@ -334,17 +378,33 @@ func hasRepo(root string, depth int) bool {
 	found := false
 	base := strings.Count(filepath.Clean(root), string(os.PathSeparator))
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || found {
+		if err != nil {
 			return nil
+		}
+		if found {
+			// SkipAll, not nil. Returning nil here kept walking the entire tree
+			// after the answer was already known — 28 seconds against 60ms for
+			// the equivalent find, because "keep going" also means stat every
+			// file in every node_modules it had already passed.
+			return filepath.SkipAll
 		}
 		if !d.IsDir() {
 			return nil
 		}
+		n := d.Name()
+		// Prune the directories that hold almost all the files and none of the
+		// repositories. Without this the walk pays for every dependency tree
+		// under the root.
+		if n == "node_modules" || n == "vendor" || n == "Pods" || n == "Library" ||
+			(len(n) > 1 && n[0] == '.' && n != ".git") {
+			return filepath.SkipDir
+		}
 		if strings.Count(filepath.Clean(p), string(os.PathSeparator))-base > depth {
 			return filepath.SkipDir
 		}
-		if d.Name() == ".git" {
+		if n == ".git" {
 			found = true
+			return filepath.SkipAll
 		}
 		return nil
 	})
@@ -358,6 +418,31 @@ func hasRepo(root string, depth int) bool {
 // device, so `daybook init < /dev/null` passes it and then EOFs on the first
 // read. Only an actual read tells you whether anyone is there.
 var eof bool
+
+// already reports whether a root is configured, comparing resolved paths so
+// "~/code" and the absolute form are the same entry.
+func already(cfg config.Config, abs string) bool {
+	for _, r := range cfg.Watch.Repos {
+		if config.Expand(r.Path) == abs {
+			return true
+		}
+	}
+	return false
+}
+
+func plural2(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, word)
+	}
+	return fmt.Sprintf("%d %ss", n, word)
+}
 
 func stdinIsInteractive() bool {
 	if eof {
