@@ -171,19 +171,29 @@ func Run(force bool) error {
 	}
 
 	authors := config.DetectAuthors()
-	defAuthor := ""
-	if len(authors) > 0 {
-		defAuthor = authors[0]
-	}
+	defAuthor := strings.Join(authors, ",")
 	email := defAuthor
 	if stdinIsInteractive() {
 		email = ask(in, fmt.Sprintf("      your commit email [%s]: ", defAuthor), defAuthor)
 	}
-	if email != "" {
-		cfg.Identity.Authors = []string{email}
-		ok("counting commits by %s", email)
-	} else {
+	var list []string
+	for _, e := range strings.Split(email, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			list = append(list, e)
+		}
+	}
+	cfg.Identity.Authors = list
+	switch {
+	case len(list) == 0:
 		warn("no author set — every commit in these repos will count as yours")
+	case len(list) == 1:
+		ok("counting commits by %s", list[0])
+	default:
+		// More than one means this directory has a local identity override. Say
+		// so: the alternative is a filter that quietly excludes most of your
+		// work while still reporting a plausible number.
+		ok("counting commits by %s", strings.Join(list, " and "))
+		note("this directory has its own git identity — both are counted")
 	}
 
 	// ---------------------------------------------------------------- 3

@@ -363,17 +363,34 @@ func (c Config) Ignored(repo string) bool {
 	return false
 }
 
-// DetectAuthors reads git's own idea of who you are. Used by the wizard so the
-// common case needs no typing, and by Load-time callers when authors is empty.
+// DetectAuthors reads git's idea of who you are — GLOBAL first, then whatever
+// the current directory resolves to if that differs.
+//
+// The global config is asked for explicitly because a bare `git config --get
+// user.email` answers for the CURRENT DIRECTORY, and a repo with a local
+// identity override answers with that. Running `daybook init` from inside such
+// a repo therefore set the author filter to an address used by exactly one
+// repository — and daybook counted 12 commits across 1 repo on a day that
+// really had 30 across 6. It reported a number, so nothing looked wrong.
+//
+// Both are returned when they differ, because someone with a per-repo identity
+// genuinely authors under both and should have both counted.
 func DetectAuthors() []string {
-	out, err := exec.Command("git", "config", "--get", "user.email").Output()
-	if err != nil {
-		return nil
+	seen := map[string]bool{}
+	var out []string
+	add := func(args ...string) {
+		b, err := exec.Command("git", args...).Output()
+		if err != nil {
+			return
+		}
+		if e := strings.TrimSpace(string(b)); e != "" && !seen[e] {
+			seen[e] = true
+			out = append(out, e)
+		}
 	}
-	if e := strings.TrimSpace(string(out)); e != "" {
-		return []string{e}
-	}
-	return nil
+	add("config", "--global", "--get", "user.email")
+	add("config", "--get", "user.email") // current directory; may be a local override
+	return out
 }
 
 // Redactor compiles the privacy patterns once.
