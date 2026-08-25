@@ -214,7 +214,7 @@ func Run(force bool) error {
 	// ---------------------------------------------------------------- 4
 	step(4, total, "Writing config")
 
-	body := renderConfig(cfg)
+	body := config.Render(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -339,81 +339,6 @@ func hasRepo(root string, depth int) bool {
 		return nil
 	})
 	return found
-}
-
-// renderConfig writes the config with its comments intact.
-//
-// Generated rather than templated from a struct so the file a person opens
-// explains itself — the reason a value is what it is matters more than the
-// value, and a marshalled struct would throw all of that away.
-func renderConfig(cfg config.Config) []byte {
-	var b strings.Builder
-	w := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
-
-	w("# daybook config. Precedence: env vars > this file > built-in defaults.")
-	w("#")
-	w("# Every string is quoted on purpose. Under YAML 1.1 an unquoted 12:00 is")
-	w("# the integer 43200, NO is false, and 010 is 8.")
-	w("")
-	w("watch:")
-	w("  agents:")
-	for _, a := range cfg.Watch.Agents {
-		w("    - { source: %q, path: %q }", a.Source, a.Path)
-	}
-	w("  repos:")
-	for _, r := range cfg.Watch.Repos {
-		w("    - { path: %q, depth: %d }", r.Path, r.Depth)
-	}
-	w("  # `git push` updates the local tracking ref, so the unpushed count is")
-	w("  # already right for anything sent from this machine. Turn this on only")
-	w("  # to notice pushes made somewhere else; it costs a round trip per repo.")
-	w("  fetch: false")
-	w("  ignore: []")
-	w("")
-	w("window:")
-	w("  length: %q", cfg.Window.Length)
-	w("  # window  — report only messages inside the window (a week-old session")
-	w("  #           contributes today's work, not its whole history)")
-	w("  # session — report the entire session, every day it is active")
-	w("  scope: %q", cfg.Window.Scope)
-	w("  stale_after: %q", cfg.Window.StaleAfter)
-	w("")
-	w("schedule:")
-	w("  at: %q", cfg.Schedule.At)
-	w("  days: []            # empty = every day")
-	w("  catch_up: %v         # asleep at `at`? run on wake rather than skip the day", cfg.Schedule.CatchUp)
-	w("")
-	w("identity:")
-	if len(cfg.Identity.Authors) > 0 {
-		w("  authors: [%q]", cfg.Identity.Authors[0])
-	} else {
-		w("  authors: []        # empty = detect from git config user.email")
-	}
-	w("  machine: %q          # empty = hostname; namespaces output files", cfg.Identity.Machine)
-	w("")
-	w("output:")
-	w("  root: %q", cfg.Output.Root)
-	w("  # The bar for repos with no remote, where \"shipped\" is undefined.")
-	w("  no_remote: %s      # committed | exclude", cfg.Output.NoRemote)
-	w("")
-	w("narrate:")
-	w("  enabled: false      # v2. uses the claude you are already signed in with")
-	w("  binary: \"\"")
-	w("  timeout: %q", cfg.Narrate.Timeout)
-	w("")
-	w("privacy:")
-	w("  # Redaction runs before anything reaches disk. Prompts carry pasted")
-	w("  # secrets far more often than people expect.")
-	w("  keep_raw_prompts: %v", cfg.Privacy.KeepRawPrompts)
-	w("  redact:")
-	for _, r := range cfg.Privacy.Redact {
-		w("    - { name: %q, pattern: %q }", r.Name, r.Pattern)
-	}
-	w("")
-	w("# Group repos into businesses for the shipped-to table. Optional.")
-	w("# business:")
-	w("#   - { name: \"Acme\", repos: [\"acme-*\", \"acme\"] }")
-	return []byte(b.String())
 }
 
 // eof latches once a read fails, so a non-interactive run stops printing

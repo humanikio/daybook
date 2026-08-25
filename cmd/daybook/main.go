@@ -34,7 +34,10 @@ import (
 	"github.com/humanikio/daybook/internal/wizard"
 )
 
-const version = "0.1.0"
+// version is overwritten at release time via -ldflags. The default is what a
+// `go build` from source reports, and saying "dev" is more honest than naming
+// a release this binary may not be.
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -66,6 +69,14 @@ func main() {
 		err = cmdServe(args)
 	case "service":
 		err = cmdService(args)
+	case "watch":
+		err = cmdWatch(args)
+	case "unwatch":
+		err = cmdUnwatch(args)
+	case "schedule":
+		err = cmdSchedule(args)
+	case "config":
+		err = cmdConfig(args)
 	case "verify":
 		err = cmdVerify(args)
 	case "version", "--version", "-v":
@@ -84,27 +95,42 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`daybook — what you actually got done today, and what of it shipped.
+	fmt.Fprintln(os.Stderr, `daybook — what you actually got done today, and what of it shipped
 
-  daybook init            guided setup; writes ~/.daybook/config.yaml
-  daybook scan            read the last window, join against git, write the report
-  daybook day [date]      print a report (default: today)
-  daybook narrate [date]  add prose and reconcile the open ledger
-  daybook open            work that has not finished proving itself
-  daybook close <id>      close a ledger item by hand
-  daybook reopen <id>     undo a close
-  daybook week [date]     rollup for the week containing date
-  daybook serve           run the scheduler (foreground in a terminal)
-  daybook service …       install | uninstall | start | stop | restart | status
-  daybook verify          check config, sources, repos and parse health
+Usage:
+  daybook init                       Guided first-run setup (start here)
+  daybook scan [--narrate]           Read the last window, join it against git,
+                                     write the report. Idempotent — safe to run
+                                     as often as you like.
+  daybook day [date]                 Print a report. date, "today" or "yesterday"
+  daybook week [date]                Rollup for the week containing date
+
+  daybook watch [<path>]             Add a repo root, or list what is watched.
+                                     --depth N how deep to search (default 4)
+                                     --agent   add a transcript source instead
+  daybook unwatch <path>             Stop watching a path
+  daybook schedule [HH:MM]           Show or change when the daily run happens.
+                                     --days mon,wed,fri  (or "every")
+                                     --catch-up true|false — run a slot missed
+                                     while the machine was asleep
+  daybook config [set <key> <value>] Show the config, or change one value
+
+  daybook narrate [date]             Add prose and reconcile the open ledger
+  daybook open                       Work that has not finished proving itself
+  daybook close <id> / reopen <id>   Close a ledger item by hand, or undo it
+
+  daybook serve                      Run the scheduler (foreground in a terminal)
+  daybook service <install|uninstall|start|stop|restart|status>
+                                     Manage the native service. Always installed
+                                     as YOU, never as root — it needs your git
+                                     identity, your transcripts, and the claude
+                                     login narration uses.
+  daybook verify                     Check config, sources, repos, parse health,
+                                     scheduler and narration in one pass
   daybook version
 
-Flags:
-  --config PATH           config file (default ~/.daybook/config.yaml)
-  --window DURATION       override window.length for this run
-  --stdout                print instead of writing (scan)
-  --narrate               narrate immediately after scanning
-`)
+Flags: --config PATH, --window DURATION, --stdout
+Env:   DAYBOOK_DIR, DAYBOOK_OUTPUT, DAYBOOK_WINDOW, DAYBOOK_MACHINE`)
 }
 
 func loadCfg(fs *flag.FlagSet, args []string) (config.Config, *string, error) {
@@ -382,6 +408,8 @@ func runScheduled(cfg config.Config, slot time.Time) error {
 	log.Printf("wrote %s · %d streams · %d commits", day.Date, day.Totals.Streams, day.Totals.Commits)
 	return nil
 }
+
+func svcStatus(cfg config.Config) (bool, bool, error) { return svc.Status(cfg) }
 
 func cmdService(args []string) error {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)

@@ -397,3 +397,124 @@ func (r *Redactor) Do(s string) string {
 	}
 	return s
 }
+
+// ---- writing the config back out -------------------------------------------
+
+// Render writes the config file, comments and all.
+//
+// Generated rather than templated from a struct so the file a person opens
+// explains itself — the reason a value is what it is matters more than the
+// value, and a marshalled struct would throw all of that away.
+func Render(cfg Config) []byte {
+	var b strings.Builder
+	w := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
+
+	w("# daybook config. Precedence: env vars > this file > built-in defaults.")
+	w("#")
+	w("# Every string is quoted on purpose. Under YAML 1.1 an unquoted 12:00 is")
+	w("# the integer 43200, NO is false, and 010 is 8.")
+	w("")
+	w("watch:")
+	w("  agents:")
+	for _, a := range cfg.Watch.Agents {
+		w("    - { source: %q, path: %q }", a.Source, a.Path)
+	}
+	w("  repos:")
+	for _, r := range cfg.Watch.Repos {
+		w("    - { path: %q, depth: %d }", r.Path, r.Depth)
+	}
+	w("  # `git push` updates the local tracking ref, so the unpushed count is")
+	w("  # already right for anything sent from this machine. Turn this on only")
+	w("  # to notice pushes made somewhere else; it costs a round trip per repo.")
+	w("  fetch: %v", cfg.Watch.Fetch)
+	w("  ignore: %s", yamlList(cfg.Watch.Ignore))
+	w("")
+	w("window:")
+	w("  length: %q", cfg.Window.Length)
+	w("  # window  — report only messages inside the window (a week-old session")
+	w("  #           contributes today's work, not its whole history)")
+	w("  # session — report the entire session, every day it is active")
+	w("  scope: %q", cfg.Window.Scope)
+	w("  stale_after: %q", cfg.Window.StaleAfter)
+	w("")
+	w("schedule:")
+	w("  at: %q", cfg.Schedule.At)
+	w("  days: %-14s # empty = every day", yamlList(cfg.Schedule.Days))
+	w("  catch_up: %v         # asleep at `at`? run on wake rather than skip the day", cfg.Schedule.CatchUp)
+	w("")
+	w("identity:")
+	if len(cfg.Identity.Authors) > 0 {
+		w("  authors: [%q]", cfg.Identity.Authors[0])
+	} else {
+		w("  authors: []        # empty = detect from git config user.email")
+	}
+	w("  machine: %q          # empty = hostname; namespaces output files", cfg.Identity.Machine)
+	w("")
+	w("output:")
+	w("  root: %q", cfg.Output.Root)
+	w("  # The bar for repos with no remote, where \"shipped\" is undefined.")
+	w("  no_remote: %s      # committed | exclude", cfg.Output.NoRemote)
+	w("")
+	w("narrate:")
+	w("  enabled: %-10v # uses the claude you are already signed in with", cfg.Narrate.Enabled)
+	w("  provider: %q        # auto | cli | api | off", providerOr(cfg.Narrate.Provider))
+	w("  binary: %q", cfg.Narrate.Binary)
+	w("  model: %q           # empty = the API provider's default", cfg.Narrate.Model)
+	w("  effort: %q          # low | medium | high | xhigh | max (api only)", cfg.Narrate.Effort)
+	w("  timeout: %q", cfg.Narrate.Timeout)
+	w("")
+	w("privacy:")
+	w("  # Redaction runs before anything reaches disk. Prompts carry pasted")
+	w("  # secrets far more often than people expect.")
+	w("  keep_raw_prompts: %v", cfg.Privacy.KeepRawPrompts)
+	w("  redact:")
+	for _, r := range cfg.Privacy.Redact {
+		w("    - { name: %q, pattern: %q }", r.Name, r.Pattern)
+	}
+	w("")
+	w("# Group repos into businesses for the shipped-to table. Optional.")
+	w("# business:")
+	w("#   - { name: \"Acme\", repos: [\"acme-*\", \"acme\"] }")
+	return []byte(b.String())
+}
+
+// yamlList renders a string slice as inline YAML, quoted.
+//
+// Values are quoted for the same reason every other string here is: an
+// unquoted `no` in a days list becomes the boolean false under YAML 1.1, and a
+// weekday list is exactly where someone would write one.
+func yamlList(xs []string) string {
+	if len(xs) == 0 {
+		return "[]"
+	}
+	q := make([]string, len(xs))
+	for i, x := range xs {
+		q[i] = fmt.Sprintf("%q", x)
+	}
+	return "[" + strings.Join(q, ", ") + "]"
+}
+
+func providerOr(p string) string {
+	if p == "" {
+		return "auto"
+	}
+	return p
+}
+
+// Save writes the config to its path, creating the directory if needed.
+//
+// It REGENERATES the file from the struct rather than editing it in place, so
+// the comments come back but any comment you added by hand does not. That is a
+// deliberate trade: surgical yaml.Node editing preserves everything but is a
+// large amount of machinery for a file whose comments are ours, and a
+// half-preserved file is more confusing than a cleanly regenerated one.
+func Save(cfg Config) error {
+	p := cfg.path
+	if p == "" {
+		p = File()
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(p, Render(cfg), 0o600)
+}

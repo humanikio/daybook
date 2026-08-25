@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      # gofmt exits 0 whether or not it found anything, so the check has to be
+      # "did it name any files" rather than an exit code.
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi

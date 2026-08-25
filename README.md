@@ -36,11 +36,27 @@ three embed bugs the same run surfaced.
 
 ## Install
 
+**macOS / Linux**
+
+```sh
+curl -fsSL https://github.com/humanikio/daybook/releases/latest/download/install.sh | sh
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://github.com/humanikio/daybook/releases/latest/download/install.ps1 | iex
+```
+
+**With Go**
+
 ```sh
 go install github.com/humanikio/daybook/cmd/daybook@latest
 ```
 
-Needs Go 1.24+ and `git`. `claude` and `gh` are optional.
+Installs to `~/.local/bin` — user-level, no sudo, because daybook reads your
+transcripts and your git identity and runs as you. Needs `git`; `claude` and
+`gh` are optional.
 
 ## Quickstart
 
@@ -117,6 +133,15 @@ timestamp. Nothing is estimated.
 Research, ops runs, a client call, a data room. Those days look empty in git and
 are fully recorded here — that's most of the point.
 
+**Pointing it somewhere new**
+
+```sh
+daybook watch ~/clientwork --depth 3
+daybook watch                        # what am I watching?
+daybook schedule 22:00 --days mon,tue,wed,thu,fri
+daybook config set narrate.enabled true
+```
+
 **Unattended**
 
 ```sh
@@ -140,6 +165,10 @@ daybook close <id>      close a ledger item by hand
 daybook reopen <id>     undo a close
 daybook serve           run the scheduler in the foreground
 daybook service …       install | uninstall | start | stop | restart | status
+daybook watch [<path>]  add a repo root, or list what is watched
+daybook unwatch <path>  stop watching a path
+daybook schedule [time] show or change when the daily run happens
+daybook config [set …]  show the config, or change one value
 daybook verify          check config, sources, repos, parse health
 daybook version
 ```
