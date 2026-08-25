@@ -64,6 +64,8 @@ func main() {
 		err = cmdClose(args, false)
 	case "reopen":
 		err = cmdClose(args, true)
+	case "backfill":
+		err = cmdBackfill(args)
 	case "week":
 		err = cmdWeek(args)
 	case "serve":
@@ -107,6 +109,9 @@ Usage:
                                      --no-narrate skips it for a quick pass.
   daybook day [date]                 Print a report. date, "today" or "yesterday"
   daybook week [date]                Rollup for the week containing date
+  daybook backfill [7 | 2w]          Build the days from before you installed
+                                     it. --from/--to for an exact range,
+                                     --force to rebuild, --narrate for prose.
 
   daybook watch [<path>]             Add a repo root, or list what is watched.
                                      --depth N how deep to search (default 4)
@@ -809,12 +814,18 @@ func durStr(minutes int) string {
 // ---- pipeline ---------------------------------------------------------------
 
 // scan is the whole pipeline: discover, extract, join, resolve.
-func scan(cfg config.Config) (model.Day, error) {
+func scan(cfg config.Config) (model.Day, error) { return scanAt(cfg, time.Now()) }
+
+// scanAt runs the pipeline for a window ending at a given instant.
+//
+// Backfill and the live run go through here together on purpose: a second code
+// path for old days would drift from the one that produces today's, and the
+// difference would show up as history that disagrees with itself.
+func scanAt(cfg config.Config, end time.Time) (model.Day, error) {
 	length, err := cfg.WindowLength()
 	if err != nil {
 		return model.Day{}, err
 	}
-	end := time.Now()
 	start := end.Add(-length)
 
 	src := claudecode.Source{}

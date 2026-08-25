@@ -64,6 +64,27 @@ on your Desktop is the wrong place for that:
 daybook config set output.root ~/Documents/daybook
 ```
 
+## Catching up
+
+`daybook` can only report tomorrow unless you ask it for yesterday:
+
+```sh
+daybook backfill 2w
+```
+
+Each day is scanned through the same pipeline a live run uses, so a backfilled
+day and a live one are the same file. Days that produced nothing are skipped
+rather than written as empty — a file saying "you did nothing" would make
+`daybook week` count a day that was never measured.
+
+Narration is opt-in here even when `narrate.enabled` is set: a fortnight at two
+minutes a day is half an hour and a large slice of quota, and nobody asking for
+their history back is asking for that. Add `--narrate` when you want it.
+
+How far back you can go is bounded by Claude Code's own retention — backfill
+prints the oldest transcript it can see, and warns for any range before it,
+where you will get commits but no sessions.
+
 ## Changing settings later
 
 `init` re-asks everything and overwrites answers you were happy with. For a

@@ -123,6 +123,18 @@ daybook day yesterday
 
 The `Summary` section is written to be readable aloud.
 
+**Catching up after you install it**
+
+```sh
+daybook backfill 2w        # build the fortnight before you had this
+daybook backfill 30 --narrate
+daybook backfill --from 2026-08-01 --to 2026-08-14
+```
+
+Everything it needs for last month is already on disk. It tells you how far
+back your transcripts actually go, and days with nothing are skipped rather
+than written as empty files.
+
 **Weekly review, or an invoice line**
 
 ```sh
@@ -179,6 +191,7 @@ daybook init            guided setup
 daybook scan            read the window, join against git, write the report
 daybook day [date]      print a report — date, today, or yesterday
 daybook week [date]     rollup for the week containing date
+daybook backfill [7|2w] build the days from before you installed it
 daybook narrate [date]  add prose and reconcile the open ledger
 daybook open            work that has not finished proving itself
 daybook close <id>      close a ledger item by hand
