@@ -221,9 +221,23 @@ func Run(force bool) error {
 	}
 
 	fmt.Println()
+	note("%sWhich commits are yours?%s", bold, reset)
+	fmt.Println()
+	note("daybook matches commits by author email — the address git stamps")
+	note("on them, which is not always the one you would name from memory.")
+	note("Check with:  %sgit config user.email%s", bold, reset)
+	fmt.Println()
+	note("Commit under more than one? List them separated by commas.")
+	note("On a shared repo this is what keeps your team's work out of your")
+	note("report; leave it empty and every commit in these folders counts.")
+	fmt.Println()
+
 	authors := config.DetectAuthors()
 	defAuthor := strings.Join(authors, ",")
-	email := ask(in, fmt.Sprintf("      your commit email [%s]: ", defAuthor), defAuthor)
+	if defAuthor == "" {
+		warn("git has no user.email set here — set one, or type an address")
+	}
+	email := ask(in, fmt.Sprintf("      commit email [%s]: ", defAuthor), defAuthor)
 	var list []string
 	for _, e := range strings.Split(email, ",") {
 		if e = strings.TrimSpace(e); e != "" {
