@@ -88,8 +88,10 @@ split** rather than one clean number:
 - **exact** — the session touched a file this commit changed. Provable.
 - **inferred** — same repo, and the session was live nearest the commit.
 
-On real data that lands around **40% exact**. A commit nothing can claim is
-listed as unattributed rather than guessed at. Once matched it is pinned and
+Measured across eight real days: **55% exact overall, ranging 28–67% by day**.
+The report prints the split per entry, so you always know which half you are
+reading. A commit nothing can claim is listed as unattributed rather than
+guessed at. Once matched it is pinned and
 never re-judged, so today's run cannot quietly rewrite yesterday's report.
 
 ---
@@ -124,7 +126,7 @@ daybook service install      run it nightly, as you, never as root
 daybook verify               check everything in one pass
 ```
 
-A scan over a 1.1 GB transcript corpus and 45 repositories takes **about five
+A scan over a 1.1 GB transcript corpus and 23 repositories takes **about two
 seconds**. Backfilling a week takes fourteen.
 
 ---
