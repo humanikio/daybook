@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -80,7 +81,7 @@ func ok(f string, a ...any)   { fmt.Printf("      %s %s\n", mark(true, false), f
 func warn(f string, a ...any) { fmt.Printf("      %s %s\n", mark(false, true), fmt.Sprintf(f, a...)) }
 func note(f string, a ...any) { fmt.Printf("        %s%s%s\n", dim, fmt.Sprintf(f, a...), reset) }
 
-const total = 5
+const total = 6
 
 // Run walks setup and writes the config.
 func Run(force bool) error {
@@ -240,6 +241,30 @@ func Run(force bool) error {
 		note("this directory has its own git identity — both are counted")
 	}
 
+	// Check the answer against reality before moving on.
+	//
+	// An address that authors nothing produces a report with hours, streams and
+	// prompts and zero commits — which reads as a quiet day, not a typo. That
+	// happened on the first real setup of this tool, twice, because the address
+	// someone THINKS they commit under and the one git records are different
+	// things. Asking git here costs one call and turns it into a question.
+	if len(list) > 0 && len(allRepos) > 0 {
+		if real := authorsSeen(allRepos); len(real) > 0 && !anyMatch(list, real) {
+			fmt.Println()
+			warn("none of those have committed in these repos recently")
+			note("git records these instead:")
+			for _, a := range real {
+				note("  %s", a)
+			}
+			if strings.ToLower(ask(in, "      use those instead? [Y/n]: ", "y")) != "n" {
+				cfg.Identity.Authors = emailsOf(real)
+				ok("counting commits by %s", strings.Join(cfg.Identity.Authors, " and "))
+			} else {
+				note("keeping it — `daybook scan` will tell you if nothing matches")
+			}
+		}
+	}
+
 	// ---------------------------------------------------------------- 3
 	step(3, total, "When should the summary run?")
 
@@ -266,7 +291,46 @@ func Run(force bool) error {
 	}
 
 	// ---------------------------------------------------------------- 4
-	step(4, total, "Writing config")
+	step(4, total, "Where should reports go?")
+
+	fmt.Println()
+	note("One markdown file per day. Put it somewhere you will actually open —")
+	note("a report you never read is not a report. It holds your prompt text,")
+	note("so it is also a folder that shows up in a screen share.")
+	fmt.Println()
+
+	// Ask for the PARENT and create a named folder inside it. Asking for the
+	// final path instead invites someone to type ~/Documents, at which point
+	// outputs/, raw/ and state/ land loose in their Documents folder — three
+	// unexplained directories they did not ask for and will not connect to this.
+	parent, name := splitOutput(cfg.Output.Root)
+	parent = ask(in, fmt.Sprintf("      create it in [%s]: ", parent), parent)
+	name = ask(in, fmt.Sprintf("      folder name [%s]: ", name), name)
+
+	parent = strings.TrimSpace(parent)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "daybook"
+	}
+	cfg.Output.Root = filepath.Join(parent, name)
+
+	abs := config.Expand(cfg.Output.Root)
+	existed := false
+	if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
+		existed = true
+	}
+	if err := os.MkdirAll(abs, 0o700); err != nil {
+		return fmt.Errorf("could not create %s: %w", cfg.Output.Root, err)
+	}
+	if existed {
+		ok("%s  (already there)", cfg.Output.Root)
+	} else {
+		ok("%s  (created)", cfg.Output.Root)
+	}
+	note("change it later:  %sdaybook config set output.root <path>%s", bold, reset)
+
+	// ---------------------------------------------------------------- 5
+	step(5, total, "Writing config")
 
 	body := config.Render(cfg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -275,17 +339,16 @@ func Run(force bool) error {
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		return err
 	}
-	ok("%s", path)
 	for _, d := range []string{cfg.OutputsDir(), cfg.RawDir(), cfg.StateDir()} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}
 	}
-	ok("output → %s", cfg.OutputRoot())
-	note("this directory holds prompt text. keep it private.")
+	ok("config  → %s", path)
+	ok("reports → %s", cfg.OutputsDir())
 
-	// ---------------------------------------------------------------- 5
-	step(5, total, "Schedule it")
+	// ---------------------------------------------------------------- 6
+	step(6, total, "Schedule it")
 	offerService(in, cfg, interactive)
 
 	fmt.Printf("\n  %snext%s\n", bold, reset)
@@ -418,6 +481,74 @@ func hasRepo(root string, depth int) bool {
 // device, so `daybook init < /dev/null` passes it and then EOFs on the first
 // read. Only an actual read tells you whether anyone is there.
 var eof bool
+
+// splitOutput turns a stored output root back into the parent and folder name
+// the wizard asks for, so re-running it offers what you chose last time rather
+// than the built-in default.
+func splitOutput(root string) (parent, name string) {
+	root = strings.TrimRight(strings.TrimSpace(root), "/")
+	if root == "" {
+		return "~/Desktop", "daybook"
+	}
+	parent, name = filepath.Split(root)
+	parent = strings.TrimRight(parent, "/")
+	if parent == "" {
+		parent = "~/Desktop"
+	}
+	if name == "" {
+		name = "daybook"
+	}
+	return parent, name
+}
+
+// authorsSeen lists who has actually committed in these repos lately.
+//
+// 30 days rather than the scan window: setup often happens on a quiet day, and
+// "nobody committed in the last 24 hours" is not evidence that an address is
+// wrong.
+func authorsSeen(repos []vcs.Repo) []string {
+	seen := map[string]bool{}
+	var out []string
+	since := time.Now().AddDate(0, 0, -30)
+	for _, r := range repos {
+		for _, a := range vcs.Authors(r.Root, since, time.Now()) {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func anyMatch(want []string, seen []string) bool {
+	for _, w := range want {
+		lw := strings.ToLower(strings.TrimSpace(w))
+		for _, s := range seen {
+			if lw != "" && strings.Contains(strings.ToLower(s), lw) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// emailsOf turns "Name <addr>" into addr, so the stored filter is the thing
+// git actually matches on.
+func emailsOf(authors []string) []string {
+	var out []string
+	for _, a := range authors {
+		if i := strings.Index(a, "<"); i >= 0 {
+			if j := strings.Index(a[i:], ">"); j > 0 {
+				out = append(out, a[i+1:i+j])
+				continue
+			}
+		}
+		out = append(out, a)
+	}
+	return out
+}
 
 // already reports whether a root is configured, comparing resolved paths so
 // "~/code" and the absolute form are the same entry.
