@@ -75,12 +75,20 @@ func Markdown(d model.Day, cfg config.Config) string {
 	}
 
 	if len(d.Shipped) > 0 {
+		// A picture belongs with the thing it shows. Captured images were
+		// being written to disk and recorded in the JSON while the report a
+		// person actually reads referenced none of them, which defeated the
+		// only purpose they have.
+		shots := map[string]model.Shot{}
+		for _, sh := range d.Shots {
+			shots[sh.Capability] = sh
+		}
 		b.WriteString("## What shipped\n\n")
 		for _, it := range d.Shipped {
 			if it.Internal {
 				continue // grouped below, so the reader hits the visible work first
 			}
-			writeShipped(&b, it)
+			writeShipped(&b, it, shots[it.What], d.Date)
 		}
 		var internal []model.ShippedItem
 		for _, it := range d.Shipped {
@@ -92,7 +100,7 @@ func Markdown(d model.Day, cfg config.Config) string {
 			b.WriteString("### Internal\n\n")
 			b.WriteString("*No user-facing surface — refactors, docs, tooling.*\n\n")
 			for _, it := range internal {
-				writeShipped(&b, it)
+				writeShipped(&b, it, model.Shot{}, d.Date)
 			}
 		}
 	}
@@ -215,36 +223,57 @@ func Markdown(d model.Day, cfg config.Config) string {
 		b.WriteString("\n")
 	}
 
-	// What broke. A report listing only what shipped describes half a day —
-	// failures are where the time went, and the part nobody writes down.
+	// What broke, and only what broke. Every error result used to be listed
+	// here, so a day in which the agent mistyped a few paths and a person
+	// declined a few tool calls was reported as the software failing 45 times.
+	// The other kinds are counted in one line, because how much friction a day
+	// carried is worth knowing and the text of it is not worth reading.
 	var broke []model.Stream
-	totalFail := 0
+	brokeN, frictionN := 0, 0
+	friction := map[model.FailKind]int{}
 	for _, s := range d.Streams {
-		if s.Agent || s.Failures == 0 {
+		if s.Agent {
 			continue
 		}
-		totalFail += s.Failures
-		broke = append(broke, s)
+		n := 0
+		for _, f := range s.Failed {
+			if f.Kind == model.FailBroke {
+				n++
+				continue
+			}
+			friction[f.Kind]++
+			frictionN++
+		}
+		// Failures counts every error result; Failed keeps at most twelve. Scale
+		// the reported total by what was kept so a stream that broke twice out
+		// of thirty results is not reported as having broken thirty times.
+		if n > 0 {
+			brokeN += n
+			broke = append(broke, s)
+		}
 	}
-	if totalFail > 0 {
-		fmt.Fprintf(&b, "## What broke (%d)\n\n", totalFail)
-		sort.Slice(broke, func(i, j int) bool { return broke[i].Failures > broke[j].Failures })
+	if brokeN > 0 {
+		fmt.Fprintf(&b, "## What broke (%d)\n\n", brokeN)
+		sort.Slice(broke, func(i, j int) bool { return brokeCount(broke[i]) > brokeCount(broke[j]) })
 		for _, s := range broke {
-			fmt.Fprintf(&b, "**%s** · %d\n\n", s.Title, s.Failures)
+			fmt.Fprintf(&b, "**%s** · %d\n\n", s.Title, brokeCount(s))
+			shown := 0
 			for _, f := range s.Failed {
-				if len(s.Failed) > 3 {
+				if f.Kind != model.FailBroke {
+					continue
+				}
+				if shown == 3 {
+					fmt.Fprintf(&b, "- *…%d more*\n", brokeCount(s)-3)
 					break
 				}
-				fmt.Fprintf(&b, "- `%s`\n", clip(f, 140))
-			}
-			if len(s.Failed) > 3 {
-				for _, f := range s.Failed[:3] {
-					fmt.Fprintf(&b, "- `%s`\n", clip(f, 140))
-				}
-				fmt.Fprintf(&b, "- *…%d more*\n", len(s.Failed)-3)
+				fmt.Fprintf(&b, "- `%s`\n", tidyFailure(f.Text))
+				shown++
 			}
 			b.WriteString("\n")
 		}
+	}
+	if frictionN > 0 {
+		fmt.Fprintf(&b, "<sub>%s. Not failures of the work.</sub>\n\n", frictionLine(friction, frictionN))
 	}
 
 	var risky []model.RepoState
@@ -340,10 +369,18 @@ func Markdown(d model.Day, cfg config.Config) string {
 
 // writeShipped renders one capability: what it is in plain language, how it
 // works for whoever has to maintain it, and where to look.
-func writeShipped(b *strings.Builder, it model.ShippedItem) {
+func writeShipped(b *strings.Builder, it model.ShippedItem, shot model.Shot, date string) {
 	fmt.Fprintf(b, "**%s**\n\n", it.What)
 	if it.How != "" {
 		fmt.Fprintf(b, "%s\n\n", it.How)
+	}
+	if shot.File != "" {
+		// Relative, so the report and its images move together.
+		fmt.Fprintf(b, "![%s](../assets/%s/%s)\n\n", it.What, date, shot.File)
+		if shot.Note != "" {
+			fmt.Fprintf(b, "*%s*\n\n", shot.Note)
+		}
+		fmt.Fprintf(b, "<sub>captured at `%s`</sub>\n\n", shot.URL)
 	}
 	if len(it.Where) > 0 {
 		b.WriteString("*Look at:*\n")
@@ -481,4 +518,53 @@ func comma(n int) string {
 		out = append(out, c)
 	}
 	return string(out)
+}
+
+// brokeCount is how many of a stream's kept failures were the work itself.
+func brokeCount(s model.Stream) int {
+	n := 0
+	for _, f := range s.Failed {
+		if f.Kind == model.FailBroke {
+			n++
+		}
+	}
+	return n
+}
+
+// frictionLine says how much of the day went into things that were not the work
+// failing, in the order a reader would care about them.
+func frictionLine(m map[model.FailKind]int, total int) string {
+	labels := []struct {
+		k model.FailKind
+		s string
+	}{
+		{model.FailCommand, "a malformed command or tool call"},
+		{model.FailRefused, "a tool call declined"},
+		{model.FailUnavailable, "a model or tool unavailable"},
+	}
+	var parts []string
+	for _, l := range labels {
+		if n := m[l.k]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d from %s", n, l.s))
+		}
+	}
+	return fmt.Sprintf("%s came back from the agent's own tools: %s",
+		plural(total, "error result", "error results"), strings.Join(parts, ", "))
+}
+
+// tidyFailure makes an error result readable: the harness wrapper stripped, one
+// line, and cut at a word rather than mid-word.
+func tidyFailure(s string) string {
+	s = strings.ReplaceAll(s, "<tool_use_error>", "")
+	s = strings.ReplaceAll(s, "</tool_use_error>", "")
+	s = strings.Join(strings.Fields(s), " ")
+	const max = 150
+	if len(s) <= max {
+		return s
+	}
+	cut := strings.LastIndex(s[:max], " ")
+	if cut < max/2 {
+		cut = max
+	}
+	return strings.TrimRight(s[:cut], " .,;:") + "…"
 }

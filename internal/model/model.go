@@ -6,7 +6,11 @@
 // older shape.
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"regexp"
+	"time"
+)
 
 // Schema version of the raw/*.json documents.
 const Schema = 1
@@ -148,8 +152,8 @@ type Stream struct {
 	// A report that lists only what shipped describes half a day. Commands that
 	// failed are what the time went into, and they are the part nobody writes
 	// down afterwards.
-	Failures int      `json:"failures,omitempty"`
-	Failed   []string `json:"failed,omitempty"`
+	Failures int       `json:"failures,omitempty"`
+	Failed   []Failure `json:"failed,omitempty"`
 
 	// Servers are development servers observed being started in this stream.
 	//
@@ -385,4 +389,87 @@ type Day struct {
 	// undocumented and moves between Claude Code versions, so this is expected
 	// to be non-zero eventually — and a silent zero would be the real bug.
 	ParseErrors int `json:"parseErrors"`
+}
+
+// FailKind separates the reasons a tool result came back as an error. They were
+// all reported together as "what broke", which read as the software breaking 45
+// times in a day when the software broke perhaps twice. Most error results are
+// the agent mistyping a path, a person declining a tool call, or a model being
+// briefly unavailable. Those are worth counting and not worth reading, and they
+// must not be presented to a teammate as product failures.
+type FailKind string
+
+const (
+	// FailBroke is the work itself failing: a test, a build, a type check, the
+	// program under development refusing to run.
+	FailBroke FailKind = "broke"
+	// FailRefused is a person or the harness declining to let something happen.
+	FailRefused FailKind = "refused"
+	// FailUnavailable is a model, tool or network that was not there.
+	FailUnavailable FailKind = "unavailable"
+	// FailCommand is the agent's own malformed call: a bad path, a shell syntax
+	// error, a tool argument that did not validate.
+	FailCommand FailKind = "command"
+)
+
+// Failure is one error result, kept with the reason it was an error.
+type Failure struct {
+	Kind FailKind `json:"kind"`
+	Text string   `json:"text"`
+}
+
+// UnmarshalJSON accepts the older form, where a failure was a bare string with
+// no kind, so raw files written before this change still load.
+func (f *Failure) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		f.Text, f.Kind = s, Classify(s)
+		return nil
+	}
+	type plain Failure
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*f = Failure(p)
+	if f.Kind == "" {
+		f.Kind = Classify(f.Text)
+	}
+	return nil
+}
+
+var (
+	// A person or the harness said no. Nothing failed; permission was withheld.
+	failRefused = regexp.MustCompile(`(?i)does ?n.t want to proceed|tool use was rejected|auto mode classifier|permission for this action|requested permissions|user doubt|^blocked:|<tool_use_error>blocked:`)
+	// Something the run depended on was not reachable.
+	failUnavailable = regexp.MustCompile(`(?i)temporarily unavailable|timed ?out|did not respond in time|unknown tool|not connected|econnrefused|rate limit|overloaded|503|502`)
+	// The agent's own call was malformed. A missing file it guessed at, a shell
+	// syntax error, a tool argument that did not validate.
+	failCommand = regexp.MustCompile(`(?i)inputvalidationerror|string to replace not found|no such file or directory|command not found|parse error|\(eval\):|^u?grep:|^cat:|^cd:|^ls:|invalid input|could not be parsed as json|file has not been read yet`)
+	// The work itself failing. Checked last, and only these are reported as
+	// something breaking.
+	failBroke = regexp.MustCompile(`(?i)\btsc\b|type-?check|test(s)? failed|FAIL\b|assertionerror|panic:|build failed|compilation|npm ERR!|exit status [1-9]`)
+)
+
+// Classify decides why an error result was an error. Order matters: a refusal
+// that mentions a file path is still a refusal, and a validation error that
+// mentions a test is still the agent's own bad call.
+func Classify(text string) FailKind {
+	switch {
+	case failRefused.MatchString(text):
+		return FailRefused
+	case failUnavailable.MatchString(text):
+		return FailUnavailable
+	case failCommand.MatchString(text):
+		return FailCommand
+	case failBroke.MatchString(text):
+		return FailBroke
+	}
+	// Unrecognised results are not promoted to breakage. Something that cannot
+	// be identified is reported as friction, because claiming the product broke
+	// on evidence this thin is the error being fixed here.
+	return FailCommand
 }

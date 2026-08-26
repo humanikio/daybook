@@ -1,8 +1,89 @@
 # Changelog
 
 Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
-reads this file to build the release body. A tag with no matching section still
-publishes, with a fallback body and a warning in the job log.
+reads this file to build the release body. A tag with no matching section is
+refused before anything is built, as is a tag over an unchanged tree.
+
+## v0.3.0
+
+### Screenshots of what shipped
+
+`daybook shoot` photographs the capabilities in a day's report and embeds them
+in it. The agent navigates to each one rather than being handed a URL, because a
+route like `/w/[workspaceId]/bulletin` is a pattern and not an address — the
+workspace id only exists once something has signed in and looked.
+
+A capability with no screen is skipped. A day whose consequential work was
+backend produces fewer pictures than `max_photos` allows, and that is the
+correct outcome: a picture of an adjacent screen is worse than no picture,
+because it is wrong and it is persuasive.
+
+The agent names which capability a picture is of **by number**, and the wording
+is resolved from the list it was given. It previously reported the wording
+itself and paraphrased it every time, so the report keyed pictures to
+capabilities by string and matched none of them — every screenshot was taken,
+filed, and then rendered nowhere.
+
+### HTML reports
+
+Written whenever a day has pictures, or when `output.formats` asks for it.
+Self-contained: images inline as data URIs, no external requests, and the
+viewer's light or dark theme is honoured.
+
+### The capture agent owns the dev servers
+
+daybook no longer starts or stops them. It passes the command, the directory and
+the expected boot time, and the agent runs the lifecycle.
+
+Owning that from here never worked. `next dev` spawns a child that escapes the
+process group, so a teardown that printed "stopping" left the port held for
+hours and the next run collided with it. The port recorded on an earlier day was
+frequently not the port the app came up on, so the already-running check missed a
+live server and tried to start a second copy. The agent is already in a shell,
+can read the port the app announces, and is told to stop what it started, to
+stop only what it started, and to kill the process group.
+
+This grants `Bash` to the capture step, and only when `preview.start_servers` is
+on — which is off by default. With it off the agent is told which apps it may
+not start rather than being handed commands it cannot run.
+
+### What broke now means what broke
+
+Every tool result that came back as an error was reported under one heading, so
+a day in which the agent mistyped some paths and a person declined some tool
+calls was reported as the software failing 45 times. On the day that produced
+that number, the work itself had broken once.
+
+Error results are now classified where they are extracted, into the work
+failing, a tool call declined, something unavailable, and the agent's own
+malformed call. Only the first is reported as breakage. The rest are counted in
+a single line, because how much friction a day carried is worth knowing and the
+text of it is not worth reading. An unrecognised result is **not** promoted to
+breakage.
+
+The narrator is fed only real breaks. It previously received all of them with no
+way to tell a declined tool call from a failing build.
+
+### A renumbered hostname no longer splits your history
+
+macOS appends `-2`, `-3`, `-4` to a machine's name when another machine on the
+network claims it, and the number changes on its own. One laptop wrote eight days
+under one name and then started writing another, becoming two machines in the
+history.
+
+The machine name is now taken from the name already present in `raw/`, when it
+matches apart from that suffix. Nothing is renamed and no third name appears.
+`identity.machine` still overrides, and only a one-to-three digit suffix is
+treated as a collision — a machine genuinely called `build-box-2026` is left
+alone.
+
+### Also
+
+- `docs/plans.md` records intended work that is not built: clearing up
+  unreferenced screenshots, and ranking capabilities that have something to
+  photograph.
+- Failure text is shown without its harness wrapper tags and cut at a word
+  rather than mid-word.
 
 ## v0.2.0
 

@@ -49,8 +49,11 @@ the path it wrote. Report that path back — do not try to move, copy or rename
 the file, and do not write anything yourself. Something else does that.
 
 Then return ONLY a JSON array, one entry per screenshot you actually took:
-[{"capability":"","file":"","url":"","note":""}]
+[{"item":0,"file":"","url":"","note":""}]
 
+item     the NUMBER of the capability from the list above. Just the number.
+         Do not retype the wording — it is matched exactly and a reworded
+         line is dropped.
 file     the path save_to_disk returned, exactly as given
 url      the address the browser was on
 note     one sentence: what a reader is looking at and where it sits in the UI
@@ -68,8 +71,12 @@ RULES
 type CaptureRequest struct {
 	// Capabilities are the `what` lines to illustrate, most consequential first.
 	Capabilities []string
-	// Running describes the servers that are up, in the agent's own words.
-	Running []string
+	// Servers are the apps the capabilities live in, with the command that
+	// starts each one. The agent starts what it needs and stops it afterwards.
+	Servers []ServerNote
+	// MayStartServers is the config's start_servers gate. When it is off the
+	// agent uses only what is already up and starts nothing.
+	MayStartServers bool
 	// Dir is where daybook files the images. The agent never writes here — it
 	// reports the paths save_to_disk handed it and this copies them in, which
 	// is why the capture agent needs no filesystem tools at all.
@@ -82,14 +89,58 @@ type CaptureRequest struct {
 
 // Prompt builds the instruction. Exported so `daybook shoot --dry-run` can show
 // exactly what would be sent without sending it.
+// ServerNote is one app the agent may need serving, and how to serve it.
+type ServerNote struct {
+	Repo      string
+	Command   string
+	Dir       string
+	Port      int
+	AlreadyUp bool
+	BootWait  string
+}
+
+// AnyUp reports whether anything is already serving.
+func (r CaptureRequest) AnyUp() bool {
+	for _, s := range r.Servers {
+		if s.AlreadyUp {
+			return true
+		}
+	}
+	return false
+}
+
 func (r CaptureRequest) Prompt() string {
 	var b strings.Builder
 	b.WriteString("Take at most ")
 	fmt.Fprintf(&b, "%d screenshots.\n\n", r.Max)
 
-	b.WriteString("RUNNING NOW:\n")
-	for _, s := range r.Running {
-		fmt.Fprintf(&b, "- %s\n", s)
+	b.WriteString("THE APPS:\n")
+	for _, s := range r.Servers {
+		if s.AlreadyUp {
+			fmt.Fprintf(&b, "- %s is ALREADY SERVING on http://localhost:%d. Do not start it and do not stop it.\n", s.Repo, s.Port)
+			continue
+		}
+		if !r.MayStartServers {
+			fmt.Fprintf(&b, "- %s is not running, and you may not start it. Skip anything that needs it.\n", s.Repo)
+			continue
+		}
+		fmt.Fprintf(&b, "- %s is NOT running. Start it with `%s` in %s. It usually takes about %s, and it announces its port on startup — read that, do not assume %d.\n",
+			s.Repo, s.Command, s.Dir, s.BootWait, s.Port)
+	}
+	if r.MayStartServers {
+		b.WriteString(`
+STARTING AND STOPPING
+Run each server in the background and keep its output, so you can read the port
+it announces. It is frequently not the port written above.
+
+YOU MUST STOP EVERY SERVER YOU STARTED before you finish, including when you
+take no pictures at all and including when something goes wrong. Stop only what
+you started — never one marked ALREADY SERVING. Kill the whole process group,
+not just the process you launched: these dev servers spawn children that outlive
+their parent and keep holding the port.
+
+Do not run anything other than the start commands given above.
+`)
 	}
 	b.WriteString("\nWHAT SHIPPED, most consequential first:\n")
 	for i, c := range r.Capabilities {
@@ -120,9 +171,36 @@ func Capture(ctx context.Context, run Runner, req CaptureRequest) ([]Shot, error
 	if raw == "" {
 		return nil, fmt.Errorf("the agent returned no list")
 	}
-	var shots []Shot
-	if err := json.Unmarshal([]byte(raw), &shots); err != nil {
+	// The agent reports which capability a picture is of by NUMBER, and the
+	// wording is then looked up here. It used to report the wording itself and
+	// paraphrased it every time — "You can now test an ingest transform…" came
+	// back as "Test an ingest transform…" — so the report keyed pictures to
+	// capabilities by string and matched none of them. Every screenshot was
+	// taken, stored, and then rendered nowhere.
+	var claims []struct {
+		Item int    `json:"item"`
+		File string `json:"file"`
+		URL  string `json:"url"`
+		Note string `json:"note"`
+		// Tolerated on input only, never trusted as the key.
+		Capability string `json:"capability"`
+	}
+	if err := json.Unmarshal([]byte(raw), &claims); err != nil {
 		return nil, err
+	}
+	var shots []Shot
+	for _, c := range claims {
+		cap := ""
+		switch {
+		case c.Item >= 1 && c.Item <= len(req.Capabilities):
+			cap = req.Capabilities[c.Item-1]
+		default:
+			cap = closest(c.Capability, req.Capabilities)
+		}
+		if cap == "" {
+			continue // cannot say what it is a picture of, so it is not usable
+		}
+		shots = append(shots, Shot{Capability: cap, File: c.File, URL: c.URL, Note: c.Note})
 	}
 
 	var kept []Shot
@@ -174,6 +252,48 @@ func copyFile(src, dst string) error {
 
 // slug names the image after what it shows, so the assets directory is
 // browsable without opening anything.
+// closest falls back to word overlap when a number was not given, so an older
+// agent reply that names the capability in its own words still lands. It has to
+// clear a real bar: half the shorter line's words, and at least three of them.
+func closest(claim string, options []string) string {
+	want := words(claim)
+	if len(want) < 3 {
+		return ""
+	}
+	best, bestScore := "", 0
+	for _, o := range options {
+		have := words(o)
+		n := 0
+		for w := range want {
+			if have[w] {
+				n++
+			}
+		}
+		if n > bestScore {
+			best, bestScore = o, n
+		}
+	}
+	shorter := len(want)
+	if n := len(words(best)); n < shorter {
+		shorter = n
+	}
+	if bestScore < 3 || bestScore*2 < shorter {
+		return ""
+	}
+	return best
+}
+
+func words(s string) map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(strings.ToLower(s)) {
+		w = strings.Trim(w, ".,:;—-()\"'`")
+		if len(w) > 3 {
+			m[w] = true
+		}
+	}
+	return m
+}
+
 func slug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder

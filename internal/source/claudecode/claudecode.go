@@ -305,7 +305,14 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 					st.Failures++
 					if len(st.Failed) < 12 && keepPrompts {
 						if t := squash(resultText(b.Content)); t != "" {
-							st.Failed = append(st.Failed, red.Do(clip(t, 300)))
+							t = red.Do(clip(t, 300))
+							// Classified here rather than at render time: why a
+							// result was an error is a property of the result,
+							// and the report must not call a declined tool call
+							// or a mistyped path a product failure.
+							st.Failed = append(st.Failed, model.Failure{
+								Kind: model.Classify(t), Text: t,
+							})
 						}
 					}
 				}

@@ -85,6 +85,11 @@ type Identity struct {
 
 type Output struct {
 	Root string `yaml:"root"`
+	// Formats to write. Markdown is always written — it renders in a terminal,
+	// an editor, a pull request and a chat message, and it diffs between days.
+	// "html" adds a self-contained page, which is written automatically anyway
+	// whenever there are screenshots, since markdown cannot carry them.
+	Formats []string `yaml:"formats,omitempty"`
 	// NoRemote is the bar for repos that have no remote at all, where
 	// "shipped" is undefined: `committed` treats a commit as done, `exclude`
 	// leaves them out. Without an answer those streams could never close.
@@ -477,7 +482,57 @@ func (c Config) Machine() string {
 	if err != nil || h == "" {
 		return "local"
 	}
-	return sanitize(strings.TrimSuffix(h, ".local"))
+	name := sanitize(strings.TrimSuffix(h, ".local"))
+	// macOS appends -2, -3, -4 when another machine on the network claims the
+	// same name, and the number changes on its own. One laptop wrote eight days
+	// as MacBook-Pro-4 and then started writing MacBook-Pro-5, so one machine
+	// became two in the history. If the raw directory already holds
+	// a machine whose name matches apart from that suffix, keep using that one:
+	// the existing data decides, so nothing is renamed and no third name
+	// appears. Set identity.machine in the config to override.
+	if prior := c.priorMachine(base(name)); prior != "" {
+		return prior
+	}
+	return name
+}
+
+var collisionSuffix = regexp.MustCompile(`-\d{1,3}$`)
+
+// base strips the network-collision suffix, so -4 and -5 compare equal.
+func base(s string) string { return collisionSuffix.ReplaceAllString(s, "") }
+
+// priorMachine returns the machine name already used in raw/ that shares a base
+// with this one, preferring the one with the most days behind it.
+func (c Config) priorMachine(want string) string {
+	ents, err := os.ReadDir(c.RawDir())
+	if err != nil {
+		return ""
+	}
+	seen := map[string]int{}
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".json") {
+			continue
+		}
+		// Files are named <date>.<machine>.json.
+		n = strings.TrimSuffix(n, ".json")
+		i := strings.Index(n, ".")
+		if i < 0 {
+			continue
+		}
+		if m := n[i+1:]; m != "" && base(m) == want {
+			seen[m]++
+		}
+	}
+	best, bestN := "", 0
+	for m, n := range seen {
+		// Ties break on the name itself so the answer does not depend on map
+		// iteration order.
+		if n > bestN || (n == bestN && m < best) {
+			best, bestN = m, n
+		}
+	}
+	return best
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -626,6 +681,8 @@ func Render(cfg Config) []byte {
 	w("  # you never see is not a report. Note it holds prompt text, so a")
 	w("  # visible folder is also a visible folder during a screen share.")
 	w("  root: %q", cfg.Output.Root)
+	w("  # markdown is always written; html is added when there are screenshots")
+	w("  formats: %s", yamlList(cfg.Output.Formats))
 	w("  # The bar for repos with no remote, where \"shipped\" is undefined.")
 	w("  no_remote: %s      # committed | exclude", cfg.Output.NoRemote)
 	w("")

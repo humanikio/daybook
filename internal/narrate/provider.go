@@ -98,6 +98,9 @@ func Check(cfg config.Config) error {
 type cliProvider struct {
 	cfg     config.Config
 	browser bool
+	// shell grants Bash, so the agent can start and stop the dev servers the
+	// capabilities live in. Only ever set when preview.start_servers is on.
+	shell bool
 }
 
 func (c *cliProvider) Name() string { return "claude-cli" }
@@ -126,13 +129,23 @@ var authMarkers = []string{
 // (mcp__claude-in-chrome__computer). The underscored spelling matches nothing
 // and refuses every call while reading as correctly configured.
 //
-// No Write, no Bash, no Edit. The agent looks and reports paths; daybook files
-// the images. That is the smallest surface that can do the job.
+// No Write and no Edit. The agent looks and reports paths, and daybook files the
+// images. A shell is granted only when the agent has to own the dev servers.
+//
+// daybook used to start and stop those itself and was bad at it: `next dev`
+// spawns a next-server grandchild that escapes the process group, so a teardown
+// that reported success left the port held for hours, and the port recorded on
+// an earlier day was frequently not the port the app came up on. The agent is
+// already in a shell and can read the port the app announces. The prompt names
+// the exact commands it may run and requires it to stop what it started.
+//
+// This widens what the step can do, so it is gated on preview.start_servers,
+// which is off by default.
 func BrowserRunner(cfg config.Config) (func(context.Context, string, string) (string, error), error) {
 	if err := probeCLI(cfg); err != nil {
 		return nil, err
 	}
-	c := &cliProvider{cfg: cfg, browser: true}
+	c := &cliProvider{cfg: cfg, browser: true, shell: cfg.Preview.StartServers}
 	return c.Complete, nil
 }
 
@@ -163,7 +176,11 @@ func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (stri
 		"--permission-mode", "dontAsk",
 	}
 	if c.browser {
-		args = append(args, "--chrome", "--allowedTools", "mcp__claude-in-chrome")
+		tools := "mcp__claude-in-chrome"
+		if c.shell {
+			tools += ",Bash"
+		}
+		args = append(args, "--chrome", "--allowedTools", tools)
 	} else {
 		args = append(args, "--tools", "")
 	}

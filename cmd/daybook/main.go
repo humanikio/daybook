@@ -279,6 +279,15 @@ func countHuman(day model.Day) int {
 	return n
 }
 
+func wantsHTML(cfg config.Config) bool {
+	for _, f := range cfg.Output.Formats {
+		if strings.EqualFold(f, "html") {
+			return true
+		}
+	}
+	return false
+}
+
 func writeDay(cfg config.Config, day model.Day) error {
 	raw, err := render.JSON(day)
 	if err != nil {
@@ -292,6 +301,15 @@ func writeDay(cfg config.Config, day model.Day) error {
 	if err := writeFile(filepath.Join(cfg.OutputsDir(), day.Date+".md"),
 		[]byte(render.Markdown(day, cfg))); err != nil {
 		return err
+	}
+	// HTML only when there is something markdown cannot carry, or when it was
+	// asked for. A second file nobody opens is clutter.
+	if wantsHTML(cfg) || len(day.Shots) > 0 {
+		assets := filepath.Join(cfg.OutputRoot(), "assets", day.Date)
+		if err := writeFile(filepath.Join(cfg.OutputsDir(), day.Date+".html"),
+			[]byte(render.HTML(day, cfg, assets))); err != nil {
+			return err
+		}
 	}
 	st := loadLastRun(cfg)
 	st.WindowEnd = day.WindowEnd.Format(time.RFC3339)

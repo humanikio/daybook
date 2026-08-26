@@ -17,7 +17,7 @@ func fakeAgent(reply string) Runner {
 func TestCaptureDropsClaimsWithNoFile(t *testing.T) {
 	dir := t.TempDir()
 	got, err := Capture(context.Background(),
-		fakeAgent(`[{"capability":"A","file":"missing.png","url":"http://x"}]`),
+		fakeAgent(`[{"item":1,"file":"missing.png","url":"http://x"}]`),
 		CaptureRequest{Capabilities: []string{"A"}, Dir: dir, Max: 3})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestCaptureDropsBlankImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := Capture(context.Background(),
-		fakeAgent(`[{"capability":"A","file":"blank.png","url":"http://x"}]`),
+		fakeAgent(`[{"item":1,"file":"blank.png","url":"http://x"}]`),
 		CaptureRequest{Capabilities: []string{"A"}, Dir: dir, Max: 3})
 	if len(got) != 0 {
 		t.Error("kept an image too small to be a screenshot")
@@ -53,7 +53,7 @@ func TestCaptureHonoursTheCap(t *testing.T) {
 		if err := os.WriteFile(p, make([]byte, 9000), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		entries = append(entries, `{"capability":"`+n+`","file":"`+n+`.png","url":"http://x"}`)
+		entries = append(entries, `{"item":1,"file":"`+n+`.png","url":"http://x"}`)
 	}
 	got, _ := Capture(context.Background(),
 		fakeAgent("["+strings.Join(entries, ",")+"]"),
@@ -72,8 +72,8 @@ func TestCaptureFilesTheImageItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := Capture(context.Background(),
-		fakeAgent(`[{"capability":"You can now sort the board","file":"`+orig+`","url":"http://x"}]`),
-		CaptureRequest{Capabilities: []string{"x"}, Dir: dir, Max: 3})
+		fakeAgent(`[{"item":1,"file":"`+orig+`","url":"http://x"}]`),
+		CaptureRequest{Capabilities: []string{"You can now sort the board"}, Dir: dir, Max: 3})
 	if err != nil || len(got) != 1 {
 		t.Fatalf("got %v, %v", got, err)
 	}
@@ -102,14 +102,48 @@ func TestCaptureAcceptsNothingFound(t *testing.T) {
 // The prompt is what someone will read to decide whether to trust this.
 func TestPromptCarriesTheCapAndTheServers(t *testing.T) {
 	p := CaptureRequest{
-		Capabilities: []string{"You can now do X"},
-		Running:      []string{"web on http://localhost:3000"},
-		Dir:          "/tmp/shots", Max: 4,
+		Capabilities:    []string{"You can now do X"},
+		Servers:         []ServerNote{{Repo: "web", Port: 3000, AlreadyUp: true}},
+		MayStartServers: true,
+		Dir:             "/tmp/shots", Max: 4,
 	}.Prompt()
 	for _, want := range []string{"at most 4", "localhost:3000", "You can now do X"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt never mentions %q", want)
 		}
+	}
+}
+
+// A server the agent did not start is not the agent's to stop, and one it did
+// start must not be left holding a port. Both instructions have to survive any
+// future edit of the prompt.
+func TestPromptTellsTheAgentToCleanUpWhatItStarted(t *testing.T) {
+	p := CaptureRequest{
+		Capabilities:    []string{"You can now do X"},
+		Servers:         []ServerNote{{Repo: "web", Command: "pnpm dev", Dir: "/w", Port: 3000, BootWait: "30s"}},
+		MayStartServers: true,
+		Dir:             "/tmp/shots", Max: 4,
+	}.Prompt()
+	for _, want := range []string{"pnpm dev", "STOP EVERY SERVER YOU STARTED", "process group", "Stop only what"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the prompt never says %q", want)
+		}
+	}
+}
+
+// With start_servers off, the agent is told what it may not do rather than
+// being handed commands it is not allowed to run.
+func TestPromptWithholdsCommandsWhenStartingIsOff(t *testing.T) {
+	p := CaptureRequest{
+		Capabilities: []string{"You can now do X"},
+		Servers:      []ServerNote{{Repo: "web", Command: "pnpm dev", Dir: "/w", Port: 3000}},
+		Dir:          "/tmp/shots", Max: 4,
+	}.Prompt()
+	if strings.Contains(p, "pnpm dev") {
+		t.Error("handed the agent a start command while starting is switched off")
+	}
+	if !strings.Contains(p, "may not start it") {
+		t.Error("never tells the agent it may not start anything")
 	}
 }
 
@@ -122,7 +156,7 @@ func TestCaptureKeepsTheSourceExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := Capture(context.Background(),
-		fakeAgent(`[{"capability":"A thing shipped","file":"`+orig+`","url":"http://x"}]`),
+		fakeAgent(`[{"item":1,"file":"`+orig+`","url":"http://x"}]`),
 		CaptureRequest{Capabilities: []string{"x"}, Dir: dir, Max: 1})
 	if len(got) != 1 || filepath.Ext(got[0].File) != ".jpg" {
 		t.Fatalf("named it %v — want the extension it actually is", got)

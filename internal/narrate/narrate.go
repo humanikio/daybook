@@ -199,9 +199,18 @@ func streamFacts(s model.Stream, carry string) string {
 		}
 	}
 
-	if len(s.Failed) > 0 {
+	// Only the work failing. The narrator used to be handed every error result,
+	// including tool calls a person declined and models that timed out, and it
+	// had no way to tell those from a failing build.
+	var broke []string
+	for _, f := range s.Failed {
+		if f.Kind == model.FailBroke {
+			broke = append(broke, f.Text)
+		}
+	}
+	if len(broke) > 0 {
 		b.WriteString("\nCOMMANDS THAT FAILED:\n")
-		for _, f := range s.Failed {
+		for _, f := range broke {
 			fmt.Fprintf(&b, "- %s\n", clip(f, 300))
 		}
 	}

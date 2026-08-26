@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -149,56 +148,32 @@ func cmdShoot(args []string) error {
 	assets := filepath.Join(cfg.OutputRoot(), "assets", date)
 	req := preview.CaptureRequest{Capabilities: caps, Dir: assets, Max: cfg.Preview.MaxPhotos}
 
-	// Start, or find, whatever has to be serving.
-	var handles []*preview.Handle
-	defer func() {
-		for _, h := range handles {
-			if h.Started() {
-				fmt.Printf("  stopping %s\n", h.Server.Command)
-				h.Stop()
-			}
+	// Which apps have to be serving, and how to start each one. daybook used to
+	// start these itself, wait for a port, and kill them afterwards — which meant
+	// owning a process lifecycle it was bad at: `next dev` spawns a next-server
+	// grandchild that escapes the process group, so a run that printed "stopping"
+	// left a server holding its port for hours. The agent is already in a shell,
+	// already waiting on the app, and can see when it is actually up. It starts
+	// them and it stops them.
+	for _, sv := range wanted {
+		up := sv.Port > 0 && preview.Reachable(sv.Port)
+		req.Servers = append(req.Servers, preview.ServerNote{
+			Repo: sv.Repo, Command: sv.Command, Dir: sv.Dir,
+			Port: sv.Port, AlreadyUp: up, BootWait: preview.BootWaitOf(sv).String(),
+		})
+		switch {
+		case up:
+			fmt.Printf("  ✓ %s already serving on :%d\n", sv.Repo, sv.Port)
+		case !cfg.Preview.StartServers:
+			fmt.Printf("  ! %s is not running and start_servers is off — the agent will be told not to start it\n", sv.Repo)
+		default:
+			fmt.Printf("  · %s: the agent will run `%s` in %s\n", sv.Repo, sv.Command, filepath.Base(sv.Dir))
 		}
-	}()
+	}
+	req.MayStartServers = cfg.Preview.StartServers
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.PreviewTimeout()+10*time.Minute)
 	defer cancel()
-
-	for _, s := range wanted {
-		switch {
-		case preview.Reachable(s.Port):
-			fmt.Printf("  ✓ %s already serving on :%d\n", s.Repo, s.Port)
-			req.Running = append(req.Running, fmt.Sprintf("%s on http://localhost:%d", s.Repo, s.Port))
-		case *dry:
-			fmt.Printf("  · would start `%s` in %s (wait %s)\n", s.Command, s.Dir, preview.BootWaitOf(s))
-		case !cfg.Preview.StartServers:
-			// Not an error. Using what is already up is the whole low-risk
-			// path, and refusing to run because one app is down would throw
-			// away the others.
-			fmt.Printf("  ! %s is not running and start_servers is off — skipping it\n", s.Repo)
-		default:
-			fmt.Printf("  starting `%s` in %s…\n", s.Command, filepath.Base(s.Dir))
-			h, err := preview.Start(ctx, previewServer(s), cfg.StateDir())
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "    could not: %v\n", err)
-				continue
-			}
-			handles = append(handles, h)
-			// The port the handle RESOLVED, not the one the catalogue guessed.
-			// A server announces where it landed and that is frequently not
-			// where it was recorded — and telling the agent to visit
-			// http://localhost:0 is a guaranteed empty result.
-			port := h.Port()
-			if port <= 0 {
-				port = s.Port
-			}
-			if port <= 0 {
-				fmt.Printf("    started, but it never said which port — cannot point the browser at it\n")
-				continue
-			}
-			req.Running = append(req.Running, fmt.Sprintf("%s on http://localhost:%d", s.Repo, port))
-			fmt.Printf("    up on :%d\n", port)
-		}
-	}
 
 	if *dry {
 		fmt.Printf("\n  would photograph up to %d of:\n", cfg.Preview.MaxPhotos)
@@ -208,8 +183,11 @@ func cmdShoot(args []string) error {
 		fmt.Printf("\n  and would send this to the agent:\n\n%s\n", indent(req.Prompt()))
 		return nil
 	}
-	if len(req.Running) == 0 {
-		return fmt.Errorf("nothing is serving, so there is nothing to look at")
+	if len(req.Servers) == 0 {
+		return fmt.Errorf("nothing that shipped runs in a folder marked for screenshots")
+	}
+	if !req.MayStartServers && !req.AnyUp() {
+		return fmt.Errorf("nothing is serving and start_servers is off, so there is nothing to look at")
 	}
 
 	run, err := narrate.BrowserRunner(cfg)
