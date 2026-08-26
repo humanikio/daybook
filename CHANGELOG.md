@@ -79,6 +79,9 @@ alone.
 
 ### Also
 
+- CI builds every platform the release builds. A build only ever tried on Linux
+  hid `syscall.Kill` not existing on Windows until the release job compiled for
+  it, by which point the tag was already pushed.
 - `docs/plans.md` records intended work that is not built: clearing up
   unreferenced screenshots, and ranking capabilities that have something to
   photograph.

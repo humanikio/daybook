@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -69,11 +68,7 @@ func ReapOrphans(stateDir string) []string {
 			_ = os.Remove(f)
 			continue
 		}
-		// Signal 0 asks "is this alive" without touching it. A recycled PID is
-		// possible in principle; killing a stranger's process is not worth the
-		// tidiness, so only a still-running group we recorded is touched.
-		if syscall.Kill(-rec.PID, syscall.Signal(0)) == nil {
-			_ = syscall.Kill(-rec.PID, syscall.SIGTERM)
+		if killGroup(rec.PID) {
 			reaped = append(reaped, fmt.Sprintf("%s (pid %d, started %s)", rec.Command, rec.PID, rec.Started))
 		}
 		_ = os.Remove(f)

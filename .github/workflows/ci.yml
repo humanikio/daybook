@@ -17,6 +17,19 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+
+      # Every target the release builds, built here first. A build only ever
+      # tried on Linux hides anything platform-specific until the release job
+      # compiles for Windows and finds syscall.Kill does not exist there — by
+      # which point the tag is pushed and the release never publishes. This
+      # costs a minute and moves that discovery to the pull request.
+      - name: Builds for every released platform
+        run: |
+          set -eu
+          for t in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            echo "  $t"
+            GOOS="${t%/*}" GOARCH="${t#*/}" go build -o /dev/null ./...
+          done
       # gofmt exits 0 whether or not it found anything, so the check has to be
       # "did it name any files" rather than an exit code.
       - name: gofmt
