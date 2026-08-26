@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -24,10 +23,13 @@ import (
 
 // Input is everything a day is built from.
 type Input struct {
-	Cfg         config.Config
-	Streams     []model.Stream
-	Commits     []model.Commit
-	Repos       []model.RepoState
+	Cfg     config.Config
+	Streams []model.Stream
+	Commits []model.Commit
+	Repos   []model.RepoState
+	// Servers is the durable catalogue, gathered over a longer lookback than
+	// the window.
+	Servers     []model.Server
 	WindowStart time.Time
 	WindowEnd   time.Time
 	ParseErrors int
@@ -104,16 +106,22 @@ func Build(in Input) model.Day {
 		streams[i].State = streamState(streams[i], in.Repos, in.WindowEnd, staleAfter)
 	}
 
-	// Every distinct way an app was started today, deduped across streams and
-	// resolved to a repo. One place to look when something has to be running.
+	// Every distinct way an app is started, resolved to a repo. Drawn from the
+	// catalogue when one was supplied — knowing how to run an app is durable
+	// and should not expire with the report window — and from this window's own
+	// streams otherwise.
 	var servers []preview.Server
-	for _, s := range streams {
-		for _, sv := range s.Servers {
-			servers = append(servers, preview.Server{
-				Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
-				Port: sv.Port, At: sv.At,
-			})
+	seed := in.Servers
+	if len(seed) == 0 {
+		for _, s := range streams {
+			seed = append(seed, s.Servers...)
 		}
+	}
+	for _, sv := range seed {
+		servers = append(servers, preview.Server{
+			Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
+			Port: sv.Port, At: sv.At,
+		})
 	}
 	for _, sv := range preview.Dedupe(servers) {
 		if sv.Dir != "" {
@@ -225,7 +233,7 @@ func fileOverlap(c model.Commit, s model.Stream) int {
 	n := 0
 	for p := range s.Files {
 		abs := resolve(p, s.CWD)
-		if !hasPathPrefix(abs, root) {
+		if !config.HasPathPrefix(abs, root) {
 			continue
 		}
 		rel := abs[len(root)+1:]
@@ -295,33 +303,12 @@ func SetRepoRoots(rs []vcs.Repo) { repoRoots = rs }
 func repoOf(path string, _ []model.RepoState) string {
 	best, bestLen := "", 0
 	for _, r := range repoRoots {
-		if hasPathPrefix(path, r.Root) && len(r.Root) > bestLen {
+		if config.HasPathPrefix(path, r.Root) && len(r.Root) > bestLen {
 			best, bestLen = r.Name, len(r.Root)
 		}
 	}
 	return best
 }
-
-// hasPathPrefix compares paths the way the filesystem would.
-//
-// macOS and Windows are case-insensitive by default, so a repo root typed as
-// `~/desktop/...` resolves perfectly on disk while every transcript records
-// `~/Desktop/...`. A case-sensitive prefix test then matches nothing, and the
-// busiest streams report touching no repository at all — with no error, because
-// nothing failed. Linux stays case-sensitive, where two paths differing only in
-// case really are two different directories.
-func hasPathPrefix(path, prefix string) bool {
-	pre := prefix + string(filepath.Separator)
-	if len(path) < len(pre) {
-		return false
-	}
-	if caseInsensitiveFS {
-		return strings.EqualFold(path[:len(pre)], pre)
-	}
-	return path[:len(pre)] == pre
-}
-
-var caseInsensitiveFS = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
 // shipState answers "has this left the machine".
 func shipState(c model.Commit, hasRemote bool, noRemote string) model.State {

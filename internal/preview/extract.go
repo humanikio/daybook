@@ -13,10 +13,15 @@
 package preview
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/humanikio/daybook/internal/model"
 )
 
 // Server is a command observed starting a development server.
@@ -132,6 +137,60 @@ func (s Server) BootWait() time.Duration {
 	// Half again as long as it took whoever measured it. They were watching;
 	// this will not be.
 	return d + d/2
+}
+
+// BootWaitOf is BootWait for a model.Server, so callers holding the report's
+// type do not have to convert just to ask a question.
+func BootWaitOf(s model.Server) time.Duration { return Server{BootSeconds: s.BootSeconds}.BootWait() }
+
+// PickPerRepo reduces a catalogue to one server per repository, preferring the
+// directory that actually looks like where the app lives.
+//
+// The raw catalogue keys on the session's cwd, and a session sits wherever
+// somebody last cd'd — so the same app appears under its root, under src/app,
+// and under a docs subfolder three levels down. Starting all of those is ten
+// servers to take six pictures, most of them in directories that cannot serve
+// anything.
+//
+// A manifest is the evidence: the directory holding package.json, go.mod or a
+// compose file is the one the command was really meant for. Failing that, the
+// shallowest observation wins, because a cwd artifact is always deeper than the
+// thing it drifted from.
+func PickPerRepo(servers []Server) []Server {
+	best := map[string]Server{}
+	for _, s := range servers {
+		if s.Repo == "" {
+			continue
+		}
+		cur, seen := best[s.Repo]
+		if !seen || score(s) > score(cur) {
+			best[s.Repo] = s
+		}
+	}
+	out := make([]Server, 0, len(best))
+	for _, s := range best {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Repo < out[j].Repo })
+	return out
+}
+
+func score(s Server) int {
+	n := 0
+	for _, manifest := range []string{"package.json", "go.mod", "docker-compose.yml", "compose.yaml", "Cargo.toml"} {
+		if _, err := os.Stat(filepath.Join(s.Dir, manifest)); err == nil {
+			n += 100
+			break
+		}
+	}
+	// A port somebody wrote down is worth more than one nobody did: it means
+	// this observation carried enough context to be checked before starting.
+	if s.Port > 0 {
+		n += 20
+	}
+	// Shallower beats deeper. A cwd that drifted is always further down.
+	n -= strings.Count(s.Dir, string(filepath.Separator))
+	return n
 }
 
 // Dedupe keeps the most recent observation per (dir, command), because the same

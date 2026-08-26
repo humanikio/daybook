@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/humanikio/daybook/internal/model"
 )
 
 // Driving the browser.
@@ -23,20 +25,9 @@ import (
 // capability already carries. Files tell an engineer where to look in the code.
 // A picture tells anyone where to look in the app.
 
-// Shot is one captured image.
-type Shot struct {
-	// Capability is the `what` line this illustrates.
-	Capability string `json:"capability"`
-	// File is the image, relative to the report.
-	File string `json:"file"`
-	// URL is where it was taken. Recorded because a screenshot asserts
-	// something nothing can verify, and naming its source is the closest
-	// available substitute for a proof.
-	URL string `json:"url"`
-	// Note is the agent's one line on what the reader is looking at.
-	Note string    `json:"note,omitempty"`
-	At   time.Time `json:"at"`
-}
+// Shot is one captured image. An alias of the report's own type, so this
+// package does not carry a second definition that can drift from it.
+type Shot = model.Shot
 
 const captureSystem = `You are photographing what shipped today, so a teammate who was not there can
 see where in the product it lives.
@@ -53,10 +44,14 @@ FOR EACH capability you are asked about:
      SKIP IT and say why.
   3. If it is right, take one screenshot.
 
+Take the screenshot with save_to_disk set to true. The tool result gives you
+the path it wrote. Report that path back — do not try to move, copy or rename
+the file, and do not write anything yourself. Something else does that.
+
 Then return ONLY a JSON array, one entry per screenshot you actually took:
 [{"capability":"","file":"","url":"","note":""}]
 
-file     the path you saved to, inside the directory you were given
+file     the path save_to_disk returned, exactly as given
 url      the address the browser was on
 note     one sentence: what a reader is looking at and where it sits in the UI
 
@@ -75,7 +70,9 @@ type CaptureRequest struct {
 	Capabilities []string
 	// Running describes the servers that are up, in the agent's own words.
 	Running []string
-	// Dir is where images go.
+	// Dir is where daybook files the images. The agent never writes here — it
+	// reports the paths save_to_disk handed it and this copies them in, which
+	// is why the capture agent needs no filesystem tools at all.
 	Dir string
 	// Max caps how many pictures come back, because a day with twenty-one
 	// capabilities does not want twenty-one screenshots — it wants the few
@@ -98,8 +95,6 @@ func (r CaptureRequest) Prompt() string {
 	for i, c := range r.Capabilities {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, c)
 	}
-	fmt.Fprintf(&b, "\nSave images into: %s\n", r.Dir)
-	b.WriteString("Name them after the capability, lowercase with hyphens, .png\n")
 	return b.String()
 }
 
@@ -135,11 +130,11 @@ func Capture(ctx context.Context, run Runner, req CaptureRequest) ([]Shot, error
 		if len(kept) >= req.Max {
 			break
 		}
-		p := s.File
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(req.Dir, filepath.Base(p))
+		src := s.File
+		if !filepath.IsAbs(src) {
+			src = filepath.Join(req.Dir, filepath.Base(src))
 		}
-		fi, err := os.Stat(p)
+		fi, err := os.Stat(src)
 		if err != nil {
 			continue // claimed a file that is not there
 		}
@@ -147,14 +142,50 @@ func Capture(ctx context.Context, run Runner, req CaptureRequest) ([]Shot, error
 		// enough to be certain, large enough not to discard a legitimately
 		// plain screen.
 		if fi.Size() < 3000 {
-			_ = os.Remove(p)
 			continue
 		}
-		s.File = filepath.Base(p)
+		// Copy rather than move: the browser tool owns where it wrote, and
+		// taking its file out from under it is not ours to do.
+		name := slug(s.Capability) + ".png"
+		if err := copyFile(src, filepath.Join(req.Dir, name)); err != nil {
+			continue
+		}
+		s.File = name
 		s.At = time.Now()
 		kept = append(kept, s)
 	}
 	return kept, nil
+}
+
+func copyFile(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o600)
+}
+
+// slug names the image after what it shows, so the assets directory is
+// browsable without opening anything.
+func slug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	dash := false
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			dash = false
+		case b.Len() > 0 && !dash && b.Len() < 60:
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "shot"
+	}
+	return out
 }
 
 // Runner is how the agent is invoked, injected so this package neither imports

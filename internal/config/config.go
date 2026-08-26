@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -183,6 +184,34 @@ func Dir() string {
 
 // File is the config path.
 func File() string { return filepath.Join(Dir(), "config.yaml") }
+
+// HasPathPrefix compares paths the way the filesystem would.
+//
+// macOS and Windows are case-insensitive by default, so a root typed as
+// `~/desktop/...` resolves perfectly on disk while everything recorded says
+// `~/Desktop/...`. A case-sensitive prefix test then matches nothing.
+//
+// This has now been the same bug three times — commit attribution, file
+// overlap, and which folders are marked for screenshots — because the fix kept
+// living privately in whichever package hit it. One implementation, in the
+// package they all already import.
+func HasPathPrefix(path, prefix string) bool {
+	if prefix == "" || path == "" {
+		return false
+	}
+	pre := strings.TrimSuffix(prefix, string(filepath.Separator)) + string(filepath.Separator)
+	if len(path) < len(pre) {
+		return false
+	}
+	if caseInsensitiveFS {
+		return strings.EqualFold(path[:len(pre)], pre)
+	}
+	return path[:len(pre)] == pre
+}
+
+// Linux stays case-sensitive, where two paths differing only in case really are
+// two different directories.
+var caseInsensitiveFS = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
 // Expand resolves a leading ~ and any environment variables in a path.
 func Expand(p string) string {
@@ -404,8 +433,7 @@ func (c Config) PreviewCovers(dir string) bool {
 		if !r.Preview {
 			continue
 		}
-		root := Expand(r.Path)
-		if root != "" && strings.HasPrefix(dir, root) {
+		if HasPathPrefix(dir, Expand(r.Path)) {
 			return true
 		}
 	}
@@ -585,7 +613,7 @@ func Render(cfg Config) []byte {
 	w("  binary: %q", cfg.Narrate.Binary)
 	w("  model: %q           # empty = the API provider's default", cfg.Narrate.Model)
 	w("  effort: %q          # low | medium | high | xhigh | max (api only)", cfg.Narrate.Effort)
-	w("  timeout: %q", cfg.Narrate.Timeout)
+	w("  timeout: %-11q # per agent turn, not for the whole run", cfg.Narrate.Timeout)
 	w("")
 	w("privacy:")
 	w("  # Redaction runs before anything reaches disk. Prompts carry pasted")

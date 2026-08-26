@@ -104,3 +104,26 @@ func contains(hay, needle string) bool {
 	}
 	return false
 }
+
+// The same bug three times — commit attribution, file overlap, and which
+// folders are marked for screenshots — each time because the fix lived
+// privately in whichever package noticed it.
+func TestHasPathPrefixFoldsCaseWhereTheFilesystemDoes(t *testing.T) {
+	typed := "/Users/x/desktop/synthcore/humanikos"
+	recorded := "/Users/x/Desktop/Synthcore/humanikOS/hos-frontend"
+
+	if !HasPathPrefix(recorded, typed) {
+		t.Error("a path typed in lower case did not match one recorded in its real case")
+	}
+	if HasPathPrefix("/Users/x/other/thing", typed) {
+		t.Error("matched an unrelated path")
+	}
+	// A prefix that is not a whole path component must not match: /a/bc is not
+	// inside /a/b.
+	if HasPathPrefix("/Users/x/desktopher/thing", typed) {
+		t.Error("matched a partial component")
+	}
+	if HasPathPrefix("", typed) || HasPathPrefix(recorded, "") {
+		t.Error("matched an empty path")
+	}
+}

@@ -41,9 +41,6 @@ func TestCaptureDropsBlankImages(t *testing.T) {
 	if len(got) != 0 {
 		t.Error("kept an image too small to be a screenshot")
 	}
-	if _, err := os.Stat(tiny); !os.IsNotExist(err) {
-		t.Error("left the rejected image on disk")
-	}
 }
 
 // The cap is the whole reason a day with twenty-one capabilities does not
@@ -66,6 +63,32 @@ func TestCaptureHonoursTheCap(t *testing.T) {
 	}
 }
 
+// The agent hands back wherever save_to_disk wrote. daybook files it, so the
+// agent needs no filesystem tools — the smallest surface that can do the job.
+func TestCaptureFilesTheImageItself(t *testing.T) {
+	src, dir := t.TempDir(), t.TempDir()
+	orig := filepath.Join(src, "screenshot-1724630000.png")
+	if err := os.WriteFile(orig, make([]byte, 9000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Capture(context.Background(),
+		fakeAgent(`[{"capability":"You can now sort the board","file":"`+orig+`","url":"http://x"}]`),
+		CaptureRequest{Capabilities: []string{"x"}, Dir: dir, Max: 3})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if got[0].File != "you-can-now-sort-the-board.png" {
+		t.Errorf("named it %q — want it named after what it shows", got[0].File)
+	}
+	if _, err := os.Stat(filepath.Join(dir, got[0].File)); err != nil {
+		t.Error("did not file the image into the assets directory")
+	}
+	// The browser tool owns where it wrote; taking its file is not ours to do.
+	if _, err := os.Stat(orig); err != nil {
+		t.Error("moved the original instead of copying it")
+	}
+}
+
 // An empty array is a legitimate answer — nothing reachable was worth a
 // picture — and must not read as a failure.
 func TestCaptureAcceptsNothingFound(t *testing.T) {
@@ -83,7 +106,7 @@ func TestPromptCarriesTheCapAndTheServers(t *testing.T) {
 		Running:      []string{"web on http://localhost:3000"},
 		Dir:          "/tmp/shots", Max: 4,
 	}.Prompt()
-	for _, want := range []string{"at most 4", "localhost:3000", "You can now do X", "/tmp/shots"} {
+	for _, want := range []string{"at most 4", "localhost:3000", "You can now do X"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt never mentions %q", want)
 		}

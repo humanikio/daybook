@@ -100,6 +100,79 @@ var pathish = regexp.MustCompile(`[A-Za-z0-9._~@/-]*/[A-Za-z0-9._@-]+\.[A-Za-z0-
 // guesswork that scraping paths involves.
 var dirTarget = regexp.MustCompile(`(?:\bcd\s+|\bgit\s+-C\s+)("[^"]+"|'[^']+'|[A-Za-z0-9._~@/-]+)`)
 
+// ServerCatalogue collects dev-server commands from a wider lookback than the
+// report window.
+//
+// How an app is started is DURABLE knowledge, not day content. It does not
+// change because a day rolled over, and binding it to the report window means a
+// 24-hour scan can only photograph apps somebody happened to run yesterday.
+// Measured: a 48-hour window over a real repository found no server at all,
+// while thirteen recordings of `next dev` sat just outside it.
+func (s Source) ServerCatalogue(cfg config.Config, lookback time.Duration) []model.Server {
+	cutoff := time.Now().Add(-lookback)
+	var out []preview.Server
+
+	for _, a := range cfg.Watch.Agents {
+		if a.Source != "" && a.Source != s.Name() {
+			continue
+		}
+		files, _ := filepath.Glob(filepath.Join(config.Expand(a.Path), "*", "*.jsonl"))
+		for _, f := range files {
+			if fi, err := os.Stat(f); err == nil && fi.ModTime().Before(cutoff) {
+				continue
+			}
+			fh, err := os.Open(f)
+			if err != nil {
+				continue
+			}
+			sc := bufio.NewScanner(fh)
+			sc.Buffer(make([]byte, 0, 256*1024), 16*1024*1024)
+			cwd := ""
+			for sc.Scan() {
+				var r record
+				if json.Unmarshal(sc.Bytes(), &r) != nil {
+					continue
+				}
+				if r.CWD != "" {
+					cwd = r.CWD
+				}
+				if r.Type != "assistant" || r.Message == nil || r.Timestamp == "" {
+					continue
+				}
+				ts, err := time.Parse(time.RFC3339, r.Timestamp)
+				if err != nil || ts.Before(cutoff) {
+					continue
+				}
+				for _, b := range contentBlocks(r.Message.Content) {
+					if b.Type != "tool_use" || b.Name != "Bash" {
+						continue
+					}
+					var in toolInput
+					if len(b.Input) > 0 {
+						_ = json.Unmarshal(b.Input, &in)
+					}
+					if in.Command == "" {
+						continue
+					}
+					if sv := preview.FromCommand(in.Command, cwd, ts.Local()); sv != nil {
+						out = append(out, *sv)
+					}
+				}
+			}
+			fh.Close()
+		}
+	}
+
+	var servers []model.Server
+	for _, sv := range preview.Dedupe(out) {
+		servers = append(servers, model.Server{
+			Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
+			Port: sv.Port, At: sv.At,
+		})
+	}
+	return servers
+}
+
 func (s Source) Streams(cfg config.Config, w source.Window) (source.Result, error) {
 	var res source.Result
 	red := cfg.Redactor()

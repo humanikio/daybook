@@ -203,6 +203,15 @@ type Narration struct {
 	CarryForward string `json:"carryForward,omitempty"`
 }
 
+// Shot is one captured image.
+type Shot struct {
+	Capability string    `json:"capability"`
+	File       string    `json:"file"`
+	URL        string    `json:"url"`
+	Note       string    `json:"note,omitempty"`
+	At         time.Time `json:"at"`
+}
+
 // ShippedItem is one thing that changed, described for someone who was not
 // there.
 //
@@ -347,6 +356,11 @@ type Day struct {
 	Servers []Server `json:"servers,omitempty"`
 
 	Narration *DayNarration `json:"dayNarration,omitempty"`
+
+	// Shots are screenshots of where the work lives in the product. Each one
+	// records the URL it came from, because a picture asserts something nothing
+	// can verify and naming its source is the nearest available substitute.
+	Shots []Shot `json:"shots,omitempty"`
 
 	// Shipped is the day read as capabilities rather than as streams — the
 	// section you can hand to somebody who was not here.

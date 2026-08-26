@@ -95,7 +95,10 @@ func Check(cfg config.Config) error {
 // It holds no credentials: the CLI uses whatever login is already on this
 // machine. That is the reason this is the default provider — for the people who
 // would want daybook at all, it needs no setup, no key, and no new secret.
-type cliProvider struct{ cfg config.Config }
+type cliProvider struct {
+	cfg     config.Config
+	browser bool
+}
 
 func (c *cliProvider) Name() string { return "claude-cli" }
 
@@ -112,7 +115,37 @@ var authMarkers = []string{
 	"credentials",
 }
 
+// BrowserRunner returns a runner with the browser tools loaded and permitted.
+//
+// TWO FLAGS, both required, and having one is the silent-failure shape:
+// --chrome loads the server, and the allowlist entry permits it. With only the
+// first, the agent sees the tools in its context and every call is refused.
+//
+// NOTE THE HYPHENS in the allowlist entry. Connector display names are
+// normalised to underscores; this built-in server's tools keep theirs
+// (mcp__claude-in-chrome__computer). The underscored spelling matches nothing
+// and refuses every call while reading as correctly configured.
+//
+// No Write, no Bash, no Edit. The agent looks and reports paths; daybook files
+// the images. That is the smallest surface that can do the job.
+func BrowserRunner(cfg config.Config) (func(context.Context, string, string) (string, error), error) {
+	if err := probeCLI(cfg); err != nil {
+		return nil, err
+	}
+	c := &cliProvider{cfg: cfg, browser: true}
+	return c.Complete, nil
+}
+
 func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (string, error) {
+	// PER CALL, not per run. The budget used to be a single context spanning
+	// every request, so a day with twelve streams spent it on them and the
+	// final pass — the one that produces "what shipped", the section a reader
+	// opens first — died of a timeout it never had a share of.
+	//
+	// A timeout named for one agent turn should bound one agent turn.
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.NarrateTimeout())
+	defer cancel()
+
 	bin := c.cfg.Narrate.Binary
 	if bin == "" {
 		bin = "claude"
@@ -124,7 +157,14 @@ func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (stri
 		// business touching the filesystem: it takes text and returns text. With
 		// no tools granted under dontAsk, it structurally cannot do anything else.
 		"--permission-mode", "dontAsk",
-		"--tools", "",
+	}
+	if c.browser {
+		args = append(args, "--chrome", "--allowedTools", "mcp__claude-in-chrome")
+	} else {
+		args = append(args, "--tools", "")
+	}
+	{
+		_ = 0
 	}
 	if system != "" {
 		args = append(args, "--system-prompt", system)

@@ -60,6 +60,8 @@ func main() {
 		err = cmdDay(args)
 	case "narrate":
 		err = cmdNarrate(args)
+	case "shoot":
+		err = cmdShoot(args)
 	case "open":
 		err = cmdOpen(args)
 	case "close":
@@ -131,6 +133,10 @@ Usage:
   daybook config set <key> <value>   Change one value
 
   daybook narrate [date]             Add prose and reconcile the open ledger
+  daybook shoot [date]               Photograph where today's work lives in the
+                                     product. Drives your real browser, so it is
+                                     a command you run, never scheduled.
+                                     --dry-run shows what it would do.
   daybook open                       Work that has not finished proving itself
   daybook close <id> / reopen <id>   Close a ledger item by hand, or undo it
 
@@ -253,6 +259,12 @@ func carryNarration(cfg config.Config, day *model.Day) {
 	}
 	day.Narration = prev.Narration
 	day.ClosedToday = prev.ClosedToday
+	// Shipped and Shots are as expensive as the prose and were being dropped by
+	// every re-scan — the same fault as the narration one, fixed once and then
+	// reintroduced by two fields added afterwards. Carry everything the model
+	// or the browser produced, not a list of it maintained by hand.
+	day.Shipped = prev.Shipped
+	day.Shots = prev.Shots
 	day.OpenItems = ledger.Open(ledger.Load(cfg))
 }
 
@@ -530,7 +542,9 @@ func narrateDay(cfg config.Config, day *model.Day) error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.NarrateTimeout())
+	// The overall cap is generous and exists only so a wedged run cannot hang
+	// forever; each individual call carries narrate.timeout itself.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 
 	res, err := narrate.Run(ctx, cfg, day, carryForward(cfg, day.Date))
@@ -1040,8 +1054,15 @@ func scanAt(cfg config.Config, end time.Time) (model.Day, error) {
 		commits = append(commits, rr.commits...)
 	}
 
+	// How an app is started is durable knowledge and does not expire with the
+	// report window. A month back, because a 24-hour window would otherwise
+	// catalogue only the apps somebody happened to run yesterday — measured, a
+	// 48-hour window found nothing while thirteen recordings sat just outside.
+	catalogue := src.ServerCatalogue(cfg, 30*24*time.Hour)
+
 	day := derive.Build(derive.Input{
 		Cfg:         cfg,
+		Servers:     catalogue,
 		Streams:     res.Streams,
 		Commits:     commits,
 		Repos:       states,

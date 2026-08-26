@@ -192,11 +192,16 @@ func oldestTranscript(cfg config.Config) (time.Time, bool) {
 	return oldest, !oldest.IsZero()
 }
 
-func plural(n int, word string) string {
+// plural, with an optional irregular form for the words English refuses to
+// pluralise by adding an s.
+func plural(n int, one string, many ...string) string {
 	if n == 1 {
-		return fmt.Sprintf("%d %s", n, word)
+		return fmt.Sprintf("%d %s", n, one)
 	}
-	return fmt.Sprintf("%d %ss", n, word)
+	if len(many) > 0 {
+		return fmt.Sprintf("%d %s", n, many[0])
+	}
+	return fmt.Sprintf("%d %ss", n, one)
 }
 
 var _ = model.Day{}
