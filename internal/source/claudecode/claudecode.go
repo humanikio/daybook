@@ -27,6 +27,7 @@ import (
 
 	"github.com/humanikio/daybook/internal/config"
 	"github.com/humanikio/daybook/internal/model"
+	"github.com/humanikio/daybook/internal/preview"
 	"github.com/humanikio/daybook/internal/source"
 )
 
@@ -275,6 +276,12 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 						st.Files[in.FilePath]++
 					}
 					if in.Command != "" {
+						if sv := preview.FromCommand(in.Command, st.CWD, ts); sv != nil {
+							st.Servers = append(st.Servers, model.Server{
+								Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
+								Port: sv.Port, At: sv.At,
+							})
+						}
 						for _, m := range pathish.FindAllString(in.Command, -1) {
 							st.Files[m]++
 						}

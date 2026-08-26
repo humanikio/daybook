@@ -18,6 +18,7 @@ import (
 
 	"github.com/humanikio/daybook/internal/config"
 	"github.com/humanikio/daybook/internal/model"
+	"github.com/humanikio/daybook/internal/preview"
 	"github.com/humanikio/daybook/internal/vcs"
 )
 
@@ -102,6 +103,28 @@ func Build(in Input) model.Day {
 		})
 		streams[i].State = streamState(streams[i], in.Repos, in.WindowEnd, staleAfter)
 	}
+
+	// Every distinct way an app was started today, deduped across streams and
+	// resolved to a repo. One place to look when something has to be running.
+	var servers []preview.Server
+	for _, s := range streams {
+		for _, sv := range s.Servers {
+			servers = append(servers, preview.Server{
+				Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
+				Port: sv.Port, At: sv.At,
+			})
+		}
+	}
+	for _, sv := range preview.Dedupe(servers) {
+		if sv.Dir != "" {
+			sv.Repo = repoOf(filepath.Join(sv.Dir, "x"), in.Repos)
+		}
+		day.Servers = append(day.Servers, model.Server{
+			Command: sv.Command, Dir: sv.Dir, BootSeconds: sv.BootSeconds,
+			Port: sv.Port, At: sv.At, Repo: sv.Repo,
+		})
+	}
+	sort.Slice(day.Servers, func(a, b int) bool { return day.Servers[a].Repo < day.Servers[b].Repo })
 
 	sort.Slice(streams, func(a, b int) bool { return streams[a].First.Before(streams[b].First) })
 	day.Streams = streams

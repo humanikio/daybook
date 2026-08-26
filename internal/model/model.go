@@ -151,6 +151,15 @@ type Stream struct {
 	Failures int      `json:"failures,omitempty"`
 	Failed   []string `json:"failed,omitempty"`
 
+	// Servers are development servers observed being started in this stream.
+	//
+	// Extracted rather than inferred: to photograph a feature something has to
+	// be serving it, and whoever built the feature already started the app to
+	// look at it. That command is in the transcript, in the directory it ran
+	// in. Guessing `npm run dev` is a coin flip; replaying what actually
+	// worked is a fact.
+	Servers []Server `json:"servers,omitempty"`
+
 	// Agent marks a session driven by something other than a human at a
 	// keyboard (entrypoint sdk-cli, or a non-human origin). Recorded, reported
 	// separately, and kept out of your totals — on one reference day there were
@@ -268,6 +277,16 @@ func (o OpenItem) Age(on time.Time) int {
 	return d
 }
 
+// Server is a development-server command observed in a session.
+type Server struct {
+	Command     string    `json:"command"`
+	Dir         string    `json:"dir"`
+	BootSeconds int       `json:"bootSeconds,omitempty"`
+	Port        int       `json:"port,omitempty"`
+	At          time.Time `json:"at"`
+	Repo        string    `json:"repo,omitempty"`
+}
+
 // RepoState is the working-tree standing of one repository.
 //
 // Uncommitted work is the riskiest state there is and it costs one `git status`
@@ -322,6 +341,10 @@ type Day struct {
 
 	Repos  []RepoState `json:"repos,omitempty"`
 	Totals Totals      `json:"totals"`
+
+	// Servers is every distinct way an app was started today, deduped. What a
+	// screenshot pass needs in order to see anything.
+	Servers []Server `json:"servers,omitempty"`
 
 	Narration *DayNarration `json:"dayNarration,omitempty"`
 
