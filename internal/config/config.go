@@ -32,6 +32,13 @@ type AgentSource struct {
 type RepoRoot struct {
 	Path  string `yaml:"path"`
 	Depth int    `yaml:"depth"`
+	// Preview opts this root into screenshots.
+	//
+	// Per root rather than global, because the answer is a property of the
+	// code: an app you can look at is worth photographing and a library is
+	// not. Asked when the path is added, which is the one moment somebody is
+	// already thinking about that directory.
+	Preview bool `yaml:"preview,omitempty"`
 }
 
 type Watch struct {
@@ -114,6 +121,27 @@ type Redaction struct {
 	Pattern string `yaml:"pattern"`
 }
 
+// Preview configures screenshots of what shipped.
+//
+// TWO GATES, and having exactly one is deliberate rather than fussy. Enabled is
+// the master switch and is off by default; a root's own `preview: true` says
+// which code is worth looking at. Neither alone does anything, so turning this
+// on globally cannot start driving a browser through repositories nobody chose.
+type Preview struct {
+	Enabled bool `yaml:"enabled"`
+	// MaxPhotos caps a whole run. A day with twenty-one capabilities does not
+	// want twenty-one screenshots; it wants the few worth looking at.
+	MaxPhotos int `yaml:"max_photos"`
+	// PerCapability stops one busy feature eating the whole budget.
+	PerCapability int `yaml:"per_capability"`
+	// StartServers permits launching an app that is not already running.
+	//
+	// Off by default. Using a server somebody already has up carries no risk at
+	// all; starting one means running project code unattended, and that is a
+	// different promise.
+	StartServers bool `yaml:"start_servers"`
+}
+
 type Privacy struct {
 	KeepRawPrompts bool        `yaml:"keep_raw_prompts"`
 	Redact         []Redaction `yaml:"redact"`
@@ -132,6 +160,7 @@ type Config struct {
 	Output     Output     `yaml:"output"`
 	Narrate    Narrate    `yaml:"narrate"`
 	Privacy    Privacy    `yaml:"privacy"`
+	Preview    Preview    `yaml:"preview"`
 	Businesses []Business `yaml:"business"`
 
 	// path is where this config was read from. Not a yaml field.
@@ -181,6 +210,7 @@ func Default() Config {
 		Schedule: Schedule{At: "23:30", CatchUp: true},
 		Output:   Output{Root: "~/Desktop/daybook", NoRemote: "committed"},
 		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
+		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false},
 		Privacy: Privacy{
 			KeepRawPrompts: true,
 			Redact: []Redaction{
@@ -267,6 +297,12 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("output.no_remote: want \"committed\" or \"exclude\", got %q", c.Output.NoRemote)
 	}
+	if c.Preview.MaxPhotos < 0 || c.Preview.MaxPhotos > 50 {
+		return fmt.Errorf("preview.max_photos: want 0-50, got %d", c.Preview.MaxPhotos)
+	}
+	if c.Preview.PerCapability < 0 || c.Preview.PerCapability > 10 {
+		return fmt.Errorf("preview.per_capability: want 0-10, got %d", c.Preview.PerCapability)
+	}
 	switch c.Narrate.Effort {
 	case "", "low", "medium", "high", "xhigh", "max":
 	default:
@@ -343,6 +379,37 @@ func (c Config) NarrateTimeout() time.Duration {
 		return d
 	}
 	return 5 * time.Minute
+}
+
+// PreviewOn reports whether screenshots would run at all: the master switch,
+// and at least one root that asked for it.
+func (c Config) PreviewOn() bool {
+	if !c.Preview.Enabled {
+		return false
+	}
+	for _, r := range c.Watch.Repos {
+		if r.Preview {
+			return true
+		}
+	}
+	return false
+}
+
+// PreviewCovers reports whether a directory sits under a root that opted in.
+func (c Config) PreviewCovers(dir string) bool {
+	if !c.Preview.Enabled || dir == "" {
+		return false
+	}
+	for _, r := range c.Watch.Repos {
+		if !r.Preview {
+			continue
+		}
+		root := Expand(r.Path)
+		if root != "" && strings.HasPrefix(dir, root) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Config) OutputRoot() string { return Expand(c.Output.Root) }
@@ -468,7 +535,11 @@ func Render(cfg Config) []byte {
 	}
 	w("  repos:")
 	for _, r := range cfg.Watch.Repos {
-		w("    - { path: %q, depth: %d }", r.Path, r.Depth)
+		if r.Preview {
+			w("    - { path: %q, depth: %d, preview: true }", r.Path, r.Depth)
+		} else {
+			w("    - { path: %q, depth: %d }", r.Path, r.Depth)
+		}
 	}
 	w("  # `git push` updates the local tracking ref, so the unpushed count is")
 	w("  # already right for anything sent from this machine. Turn this on only")
@@ -524,6 +595,20 @@ func Render(cfg Config) []byte {
 	for _, r := range cfg.Privacy.Redact {
 		w("    - { name: %q, pattern: %q }", r.Name, r.Pattern)
 	}
+	w("")
+	w("# ── SCREENSHOTS ─────────────────────────────────────────────")
+	w("# Photographs where a new feature lives in the UI, so a teammate can")
+	w("# find it. Needs a running app, and drives your real browser as you.")
+	w("#")
+	w("# TWO GATES: this switch, and `preview: true` on a repo root above.")
+	w("# Neither alone does anything.")
+	w("preview:")
+	w("  enabled: %v", cfg.Preview.Enabled)
+	w("  max_photos: %-9d # a whole run, not per repo", cfg.Preview.MaxPhotos)
+	w("  per_capability: %d      # so one busy feature cannot take the lot", cfg.Preview.PerCapability)
+	w("  # Launch an app that is not already running. Using one you already have")
+	w("  # up carries no risk; starting one runs project code unattended.")
+	w("  start_servers: %v", cfg.Preview.StartServers)
 	w("")
 	w("# Group repos into businesses for the shipped-to table. Optional.")
 	w("# business:")

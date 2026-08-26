@@ -45,3 +45,62 @@ func TestWindowLengthUsesTheSameParser(t *testing.T) {
 		t.Fatalf("Validate() rejected a 7d window: %v", err)
 	}
 }
+
+// Two gates, and having exactly one must do nothing. A master switch that looks
+// on while nothing happens is the worst outcome available here — worse than
+// off, because somebody stops looking for the reason.
+func TestPreviewNeedsBothGates(t *testing.T) {
+	cases := []struct {
+		master, root bool
+		want         bool
+	}{
+		{false, false, false},
+		{true, false, false}, // enabled globally, no folder opted in
+		{false, true, false}, // a folder asked, but the switch is off
+		{true, true, true},
+	}
+	for _, c := range cases {
+		cfg := Default()
+		cfg.Preview.Enabled = c.master
+		cfg.Watch.Repos = []RepoRoot{{Path: "~/code", Depth: 4, Preview: c.root}}
+		if got := cfg.PreviewOn(); got != c.want {
+			t.Errorf("master=%v root=%v → PreviewOn()=%v, want %v", c.master, c.root, got, c.want)
+		}
+	}
+}
+
+// Screenshots must be off out of the box. It drives a real browser as the user.
+func TestPreviewIsOffByDefault(t *testing.T) {
+	if Default().Preview.Enabled {
+		t.Error("preview is enabled in the default config")
+	}
+	if Default().Preview.StartServers {
+		t.Error("start_servers is enabled by default — it runs project code unattended")
+	}
+}
+
+// The whole list survives a write, unlike the authors bug.
+func TestPreviewSurvivesRender(t *testing.T) {
+	cfg := Default()
+	cfg.Preview.Enabled = true
+	cfg.Preview.MaxPhotos = 9
+	cfg.Watch.Repos = []RepoRoot{{Path: "~/a", Depth: 4, Preview: true}, {Path: "~/b", Depth: 2}}
+	out := string(Render(cfg))
+	for _, want := range []string{"enabled: true", "max_photos: 9", `path: "~/a", depth: 4, preview: true`} {
+		if !contains(out, want) {
+			t.Errorf("Render lost %q", want)
+		}
+	}
+	if contains(out, `path: "~/b", depth: 2, preview: true`) {
+		t.Error("Render marked a root that had not opted in")
+	}
+}
+
+func contains(hay, needle string) bool {
+	for i := 0; i+len(needle) <= len(hay); i++ {
+		if hay[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}

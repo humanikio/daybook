@@ -45,6 +45,7 @@ func cmdConfigEdit(args []string) error {
 			{Label: "Narration", Value: describeNarration(cfg)},
 			{Label: "Window", Value: cfg.Window.Length},
 			{Label: "Keep prompts", Value: yesNo(cfg.Privacy.KeepRawPrompts)},
+			{Label: "Screenshots", Value: describePreview(cfg)},
 		}
 
 		i := tui.Select("daybook settings", items, colour)
@@ -91,6 +92,8 @@ func cmdConfigEdit(args []string) error {
 			if !cfg.Privacy.KeepRawPrompts {
 				fmt.Println("  prompt text will no longer be stored — counts and commits still are")
 			}
+		case 8:
+			editPreview(&cfg)
 		}
 
 		if err := cfg.Validate(); err != nil {
@@ -139,6 +142,61 @@ func chooseNarration(cfg *config.Config, colour bool) {
 		fmt.Println("  narration off")
 	}
 	fmt.Println()
+}
+
+// editPreview walks the master switch and the caps. Which FOLDERS are
+// photographed stays with `daybook watch`, where the rest of that root's
+// settings live — splitting it across two screens would be worse than the extra
+// line here saying so.
+func editPreview(cfg *config.Config) {
+	fmt.Println("  Screenshots capture where a new feature lives in the UI, so somebody")
+	fmt.Println("  who was not there can find it. They drive your real browser, as you.")
+	fmt.Println()
+
+	on := strings.ToLower(tui.Prompt("enable screenshots? (y/n)", yesNo(cfg.Preview.Enabled)))
+	cfg.Preview.Enabled = on == "y" || on == "yes"
+	if !cfg.Preview.Enabled {
+		fmt.Println("  off")
+		return
+	}
+	if n, err := strconv.Atoi(tui.Prompt("most photos in one run", strconv.Itoa(cfg.Preview.MaxPhotos))); err == nil {
+		cfg.Preview.MaxPhotos = n
+	}
+	start := strings.ToLower(tui.Prompt("start apps that are not already running? (y/n)", yesNo(cfg.Preview.StartServers)))
+	cfg.Preview.StartServers = start == "y" || start == "yes"
+
+	// The second gate. Enabled alone does nothing, and a switch that appears to
+	// be on while nothing happens is the worst outcome here.
+	var on_ []string
+	for _, r := range cfg.Watch.Repos {
+		if r.Preview {
+			on_ = append(on_, r.Path)
+		}
+	}
+	fmt.Println()
+	if len(on_) == 0 {
+		fmt.Println("  ! no folder has opted in yet, so nothing will be photographed.")
+		fmt.Println("    add one:  daybook watch <path> --preview")
+	} else {
+		fmt.Printf("  photographing: %s\n", strings.Join(on_, ", "))
+	}
+	fmt.Println()
+}
+
+func describePreview(cfg config.Config) string {
+	if !cfg.Preview.Enabled {
+		return "off"
+	}
+	n := 0
+	for _, r := range cfg.Watch.Repos {
+		if r.Preview {
+			n++
+		}
+	}
+	if n == 0 {
+		return "on, but no folder opted in"
+	}
+	return fmt.Sprintf("on · %s · max %d", plural(n, "folder"), cfg.Preview.MaxPhotos)
 }
 
 func describeRoots(cfg config.Config) string {

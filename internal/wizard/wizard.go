@@ -190,13 +190,31 @@ func Run(force bool) error {
 		}
 
 		before := len(vcs.Discover(cfg))
-		cfg.Watch.Repos = append(cfg.Watch.Repos, config.RepoRoot{Path: strings.TrimSpace(entry), Depth: 4})
+		root := config.RepoRoot{Path: strings.TrimSpace(entry), Depth: 4}
+		cfg.Watch.Repos = append(cfg.Watch.Repos, root)
 		found := len(vcs.Discover(cfg)) - before
 		if found == 0 {
 			warn("no git repositories under there")
 			note("add it anyway, or try a parent folder")
 		} else {
 			ok("%d repositories", found)
+		}
+
+		// Ask here, while somebody is thinking about this directory. The answer
+		// is a property of the code — an app you can look at is worth
+		// photographing, a library is not — so it does not belong in a global
+		// question asked later about everything at once.
+		if found > 0 && stdinIsInteractive() {
+			note("photograph what ships here? this drives your real browser to capture")
+			note("where a new feature lives in the UI, so a teammate can find it.")
+			note("needs the app running, and acts as you. off unless you say otherwise.")
+			if strings.ToLower(ask(in, "      screenshots for this folder? [y/N]: ", "n")) == "y" {
+				cfg.Watch.Repos[len(cfg.Watch.Repos)-1].Preview = true
+				// Saying yes anywhere turns the master switch on; asking the
+				// same question twice in one wizard would be noise.
+				cfg.Preview.Enabled = true
+				ok("screenshots on for %s", root.Path)
+			}
 		}
 		if !stdinIsInteractive() {
 			break

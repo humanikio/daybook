@@ -28,6 +28,7 @@ func cmdWatch(args []string) error {
 	args = flagsFirst(args)
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	depth := fs.Int("depth", 4, "how deep to search for repositories")
+	prev := fs.Bool("preview", false, "photograph what ships in this folder")
 	agent := fs.Bool("agent", false, "add a transcript source rather than a repo root")
 	cfg, _, err := loadCfg(fs, args)
 	if err != nil {
@@ -46,7 +47,11 @@ func cmdWatch(args []string) error {
 		}
 		fmt.Println("repo roots:")
 		for _, r := range cfg.Watch.Repos {
-			fmt.Printf("  %-40s depth %d\n", r.Path, r.Depth)
+			shot := ""
+			if r.Preview {
+				shot = "  · screenshots"
+			}
+			fmt.Printf("  %-40s depth %d%s\n", r.Path, r.Depth, shot)
 		}
 		fmt.Printf("  → %d repositories discovered\n", len(vcs.Discover(cfg)))
 		return nil
@@ -82,7 +87,10 @@ func cmdWatch(args []string) error {
 		}
 	}
 	before := len(vcs.Discover(cfg))
-	cfg.Watch.Repos = append(cfg.Watch.Repos, config.RepoRoot{Path: stored, Depth: *depth})
+	cfg.Watch.Repos = append(cfg.Watch.Repos, config.RepoRoot{Path: stored, Depth: *depth, Preview: *prev})
+	if *prev {
+		cfg.Preview.Enabled = true
+	}
 	after := vcs.Discover(cfg)
 	if err := config.Save(cfg); err != nil {
 		return err
@@ -317,7 +325,7 @@ func flagsFirst(args []string) []string {
 
 // boolFlags take no value, so the word after them is a positional.
 var boolFlags = map[string]struct{}{
-	"agent": {}, "stdout": {}, "narrate": {}, "force": {},
+	"agent": {}, "stdout": {}, "narrate": {}, "force": {}, "preview": {}, "no-narrate": {},
 }
 
 func setBool(dst *bool, v string) error {
