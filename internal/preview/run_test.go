@@ -122,3 +122,52 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// The catalogue records what a port WAS. A dev server moves — a taken port, a
+// changed script, a different branch — and it announces where it landed. That
+// announcement is better evidence than anything recorded earlier.
+func TestLogPortReadsWhatTheServerAnnounced(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "x.log")
+	body := `> hos-frontend@0.1.0 dev
+> next dev -p 3002
+
+   ▲ Next.js 15.5.7
+   - Local:        http://localhost:3002
+   ✓ Ready in 1878ms`
+	if err := os.WriteFile(log, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handle{logPath: log}
+	if got := h.logPort(); got != 3002 {
+		t.Errorf("logPort() = %d, want 3002 — the port it actually came up on", got)
+	}
+}
+
+func TestLogPortIsZeroWhenNothingAnnounced(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "x.log")
+	_ = os.WriteFile(log, []byte("building...\ndone\n"), 0o600)
+	if got := (&Handle{logPath: log}).logPort(); got != 0 {
+		t.Errorf("invented a port: %d", got)
+	}
+}
+
+// A server with no recorded port used to be given its boot time and assumed
+// fine, so one that announced itself on its second line was reported as
+// "started" with no address — and the agent got a frontend with no backend.
+func TestWaitFindsAPortNobodyRecorded(t *testing.T) {
+	port := freePort(t)
+	h, err := Start(context.Background(), Server{
+		// Announces the port the way a real server does, then serves on it.
+		Command: "echo 'Server running on port " + itoa(port) + "'; python3 -m http.server " + itoa(port),
+		Dir:     t.TempDir(), BootSeconds: 1, // no Port recorded
+	}, t.TempDir())
+	if err != nil {
+		t.Skipf("no stand-in server available here: %v", err)
+	}
+	defer h.Stop()
+	if h.Port() != port {
+		t.Errorf("Port() = %d, want %d — read from what the server announced", h.Port(), port)
+	}
+}

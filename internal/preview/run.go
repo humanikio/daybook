@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -57,6 +58,15 @@ type Handle struct {
 // Started reports whether anything was actually launched. False means the port
 // already answered and nothing needs stopping.
 func (h *Handle) Started() bool { return h != nil && h.cmd != nil }
+
+// Port is where the server actually ended up, which is not always where the
+// catalogue said it would be.
+func (h *Handle) Port() int {
+	if h == nil {
+		return 0
+	}
+	return h.Server.Port
+}
 
 // Log is where the server's output went, for when it did not come up.
 func (h *Handle) Log() string {
@@ -119,20 +129,71 @@ func Start(ctx context.Context, s Server, stateDir string) (*Handle, error) {
 	return h, nil
 }
 
+// logPort reads the port the server says it is on.
+//
+// The catalogue records what a port WAS, and a dev server moves — a taken port,
+// a changed script, a different branch. Measured: hos-frontend was catalogued
+// on 3000, started cleanly on 3002, and was killed as a failure while it sat
+// there serving, because the readiness check polled the number in the
+// catalogue instead of the one in the log.
+//
+// Almost every dev server prints its own URL as the first thing it does. That
+// is better evidence than anything recorded earlier.
+var logPortPat = regexp.MustCompile(`(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})|(?:port|listening on)\D{0,12}?(\d{4,5})`)
+
+func (h *Handle) logPort() int {
+	b, err := os.ReadFile(h.logPath)
+	if err != nil {
+		return 0
+	}
+	for _, m := range logPortPat.FindAllStringSubmatch(string(b), -1) {
+		for _, g := range m[1:] {
+			if g == "" {
+				continue
+			}
+			if n, err := strconv.Atoi(g); err == nil && n > 0 && n < 65536 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
 func (h *Handle) waitReady(ctx context.Context, within time.Duration) error {
 	if h.Server.Port <= 0 {
-		// No port to poll. Give it the boot time and hope — better than
-		// declaring failure for an app whose port nobody wrote down.
-		select {
-		case <-time.After(within):
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
+		// Nothing recorded, so watch the log for the server to announce itself.
+		// Sleeping blindly here was the bug that left hos-api "started" with no
+		// address: it printed "Server running on port 6070" on its second line,
+		// nothing read it, and the agent was handed a frontend with no backend
+		// and told to go photograph features that need one.
+		deadline := time.Now().Add(within)
+		for time.Now().Before(deadline) {
+			if p := h.logPort(); p > 0 && Reachable(p) {
+				h.Server.Port = p
+				return nil
+			}
+			select {
+			case <-h.exited:
+				return fmt.Errorf("%s exited before serving — see %s", h.Server.Command, h.logPath)
+			case <-time.After(300 * time.Millisecond):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
+		// Alive but silent about where. Better than calling it a failure — some
+		// servers never say — but the caller has no address to use.
+		return nil
 	}
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		if Reachable(h.Server.Port) {
+			return nil
+		}
+		// Believe the server over the catalogue. If it has announced a port and
+		// that one answers, it is up and the recorded number was simply out of
+		// date.
+		if p := h.logPort(); p > 0 && p != h.Server.Port && Reachable(p) {
+			h.Server.Port = p
 			return nil
 		}
 		select {
@@ -144,6 +205,11 @@ func (h *Handle) waitReady(ctx context.Context, within time.Duration) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	}
+	// Last look before giving up: a server can announce late.
+	if p := h.logPort(); p > 0 && Reachable(p) {
+		h.Server.Port = p
+		return nil
 	}
 	return fmt.Errorf("%s did not answer on :%d within %s — see %s",
 		h.Server.Command, h.Server.Port, within, h.logPath)

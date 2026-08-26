@@ -135,6 +135,15 @@ type Preview struct {
 	MaxPhotos int `yaml:"max_photos"`
 	// PerCapability stops one busy feature eating the whole budget.
 	PerCapability int `yaml:"per_capability"`
+	// Timeout bounds ONE capture session.
+	//
+	// Separate from narrate.timeout, and much longer, because the work is not
+	// comparable: narration is one request and a reply, while a capture loads
+	// pages, clicks through navigation, waits for renders and looks at what
+	// came back. Five minutes is generous for the first and not enough for the
+	// second — measured, a two-capability capture against a real app exceeded
+	// it while working correctly.
+	Timeout string `yaml:"timeout"`
 	// StartServers permits launching an app that is not already running.
 	//
 	// Off by default. Using a server somebody already has up carries no risk at
@@ -239,7 +248,7 @@ func Default() Config {
 		Schedule: Schedule{At: "23:30", CatchUp: true},
 		Output:   Output{Root: "~/Desktop/daybook", NoRemote: "committed"},
 		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
-		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false},
+		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false, Timeout: "20m"},
 		Privacy: Privacy{
 			KeepRawPrompts: true,
 			Redact: []Redaction{
@@ -326,6 +335,11 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("output.no_remote: want \"committed\" or \"exclude\", got %q", c.Output.NoRemote)
 	}
+	if c.Preview.Timeout != "" {
+		if _, err := ParseDuration(c.Preview.Timeout); err != nil {
+			return fmt.Errorf("preview.timeout: %w", err)
+		}
+	}
 	if c.Preview.MaxPhotos < 0 || c.Preview.MaxPhotos > 50 {
 		return fmt.Errorf("preview.max_photos: want 0-50, got %d", c.Preview.MaxPhotos)
 	}
@@ -401,6 +415,14 @@ func (c Config) StaleAfter() (time.Duration, error) {
 		return 120 * time.Hour, nil
 	}
 	return ParseDuration(c.Window.StaleAfter)
+}
+
+// PreviewTimeout bounds one capture session.
+func (c Config) PreviewTimeout() time.Duration {
+	if d, err := ParseDuration(c.Preview.Timeout); err == nil && d > 0 {
+		return d
+	}
+	return 20 * time.Minute
 }
 
 func (c Config) NarrateTimeout() time.Duration {
@@ -637,6 +659,9 @@ func Render(cfg Config) []byte {
 	w("  # Launch an app that is not already running. Using one you already have")
 	w("  # up carries no risk; starting one runs project code unattended.")
 	w("  start_servers: %v", cfg.Preview.StartServers)
+	w("  # One capture session. Much longer than narrate.timeout on purpose:")
+	w("  # loading pages and clicking through is not comparable to one request.")
+	w("  timeout: %q", cfg.Preview.Timeout)
 	w("")
 	w("# Group repos into businesses for the shipped-to table. Optional.")
 	w("# business:")

@@ -112,3 +112,28 @@ func TestPromptCarriesTheCapAndTheServers(t *testing.T) {
 		}
 	}
 }
+
+// The browser tool writes jpg. A jpg named .png is a file some viewers refuse,
+// and a picture nobody can open is the same as no picture.
+func TestCaptureKeepsTheSourceExtension(t *testing.T) {
+	src, dir := t.TempDir(), t.TempDir()
+	orig := filepath.Join(src, "screenshot-1787719766684-1.jpg")
+	if err := os.WriteFile(orig, make([]byte, 9000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := Capture(context.Background(),
+		fakeAgent(`[{"capability":"A thing shipped","file":"`+orig+`","url":"http://x"}]`),
+		CaptureRequest{Capabilities: []string{"x"}, Dir: dir, Max: 1})
+	if len(got) != 1 || filepath.Ext(got[0].File) != ".jpg" {
+		t.Fatalf("named it %v — want the extension it actually is", got)
+	}
+}
+
+// The length cap used to stop mid-word and drop the separators after it,
+// producing names like ...namespaceitwasissuedin.
+func TestSlugCutsOnAWordBoundary(t *testing.T) {
+	got := slug("SQL run from the agent or any console is confined to the namespace it was issued in")
+	if strings.HasSuffix(got, "-") || strings.Contains(got, "namespaceit") {
+		t.Errorf("slug ran words together: %q", got)
+	}
+}

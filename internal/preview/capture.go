@@ -146,7 +146,14 @@ func Capture(ctx context.Context, run Runner, req CaptureRequest) ([]Shot, error
 		}
 		// Copy rather than move: the browser tool owns where it wrote, and
 		// taking its file out from under it is not ours to do.
-		name := slug(s.Capability) + ".png"
+		// Keep the source's extension. The browser tool writes jpg, and a jpg
+		// named .png is a file some viewers refuse to open — a picture nobody
+		// can see is the same as no picture.
+		ext := strings.ToLower(filepath.Ext(src))
+		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp" {
+			ext = ".png"
+		}
+		name := slug(s.Capability) + ext
 		if err := copyFile(src, filepath.Join(req.Dir, name)); err != nil {
 			continue
 		}
@@ -184,6 +191,11 @@ func slug(s string) string {
 	out := strings.Trim(b.String(), "-")
 	if out == "" {
 		return "shot"
+	}
+	// The 60-char cap above stops mid-word and drops the separators after it,
+	// which produced ...namespaceitwasissuedin. Cut on a boundary instead.
+	if i := strings.LastIndexByte(out, '-'); len(out) > 48 && i > 24 {
+		out = out[:i]
 	}
 	return out
 }

@@ -24,6 +24,7 @@ func cmdShoot(args []string) error {
 	args = flagsFirst(args)
 	fs := flag.NewFlagSet("shoot", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "show what would be done, drive nothing")
+	verbose := fs.Bool("verbose", false, "print what the agent said")
 	cfg, _, err := loadCfg(fs, args)
 	if err != nil {
 		return err
@@ -159,7 +160,7 @@ func cmdShoot(args []string) error {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.PreviewTimeout()+10*time.Minute)
 	defer cancel()
 
 	for _, s := range wanted {
@@ -182,7 +183,20 @@ func cmdShoot(args []string) error {
 				continue
 			}
 			handles = append(handles, h)
-			req.Running = append(req.Running, fmt.Sprintf("%s on http://localhost:%d", s.Repo, s.Port))
+			// The port the handle RESOLVED, not the one the catalogue guessed.
+			// A server announces where it landed and that is frequently not
+			// where it was recorded — and telling the agent to visit
+			// http://localhost:0 is a guaranteed empty result.
+			port := h.Port()
+			if port <= 0 {
+				port = s.Port
+			}
+			if port <= 0 {
+				fmt.Printf("    started, but it never said which port — cannot point the browser at it\n")
+				continue
+			}
+			req.Running = append(req.Running, fmt.Sprintf("%s on http://localhost:%d", s.Repo, port))
+			fmt.Printf("    up on :%d\n", port)
 		}
 	}
 
@@ -204,6 +218,9 @@ func cmdShoot(args []string) error {
 	}
 	fmt.Printf("\n  looking at %s…\n", plural(len(caps), "capability", "capabilities"))
 
+	if *verbose {
+		run = logging(run)
+	}
 	shots, err := preview.Capture(ctx, run, req)
 	if err != nil {
 		return err
@@ -224,6 +241,22 @@ func cmdShoot(args []string) error {
 	}
 	fmt.Printf("  %s\n", assets)
 	return nil
+}
+
+// logging wraps the runner so `--verbose` shows what was asked and what came
+// back. An empty result is otherwise indistinguishable from a broken one.
+func logging(run preview.Runner) preview.Runner {
+	return func(ctx context.Context, system, prompt string) (string, error) {
+		fmt.Printf("\n---- prompt ----\n%s\n---- reply ----\n", prompt)
+		out, err := run(ctx, system, prompt)
+		if err != nil {
+			fmt.Printf("(error) %v\n", err)
+		} else {
+			fmt.Println(out)
+		}
+		fmt.Println("----------------")
+		return out, err
+	}
 }
 
 func containsStr(xs []string, s string) bool {

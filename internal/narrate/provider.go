@@ -143,7 +143,11 @@ func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (stri
 	// opens first — died of a timeout it never had a share of.
 	//
 	// A timeout named for one agent turn should bound one agent turn.
-	ctx, cancel := context.WithTimeout(ctx, c.cfg.NarrateTimeout())
+	budget := c.cfg.NarrateTimeout()
+	if c.browser {
+		budget = c.cfg.PreviewTimeout()
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
 	bin := c.cfg.Narrate.Binary
@@ -187,7 +191,11 @@ func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (stri
 			}
 		}
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("claude timed out after %s (narrate.timeout)", c.cfg.NarrateTimeout())
+			which := "narrate.timeout"
+			if c.browser {
+				which = "preview.timeout"
+			}
+			return "", fmt.Errorf("claude timed out after %s (%s)", budget, which)
 		}
 		if s := strings.TrimSpace(stderr); s != "" {
 			return "", fmt.Errorf("claude failed: %s", firstLine(s))
