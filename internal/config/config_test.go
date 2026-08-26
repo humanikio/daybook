@@ -109,11 +109,33 @@ func contains(hay, needle string) bool {
 // folders are marked for screenshots — each time because the fix lived
 // privately in whichever package noticed it.
 func TestHasPathPrefixFoldsCaseWhereTheFilesystemDoes(t *testing.T) {
-	typed := "/Users/x/desktop/synthcore/humanikos"
-	recorded := "/Users/x/Desktop/Synthcore/humanikOS/hos-frontend"
+	typed := "/Users/x/desktop/projects/example"
+	recorded := "/Users/x/Desktop/Projects/Example/frontend"
 
-	if !HasPathPrefix(recorded, typed) {
-		t.Error("a path typed in lower case did not match one recorded in its real case")
+	// Both behaviours, on whichever platform this runs. Case folding is right on
+	// a Mac and wrong on Linux, where those are two different directories — so
+	// asserting one of them unconditionally passed on a Mac and failed in CI.
+	// Exercising both here means either platform's bug shows up on either.
+	for _, folds := range []bool{true, false} {
+		t.Run(map[bool]string{true: "folding", false: "exact"}[folds], func(t *testing.T) {
+			restore := caseInsensitiveFS
+			caseInsensitiveFS = folds
+			defer func() { caseInsensitiveFS = restore }()
+
+			if got := HasPathPrefix(recorded, typed); got != folds {
+				if folds {
+					t.Error("a path typed in lower case did not match one recorded in its real case")
+				} else {
+					t.Error("matched two paths that are different directories on this filesystem")
+				}
+			}
+		})
+	}
+	// Matching a path in the case it was recorded in has to work everywhere, or
+	// the assertion above is the only thing this test checks and it is skipped
+	// on half the platforms.
+	if !HasPathPrefix("/Users/x/Desktop/Projects/Example/frontend", "/Users/x/Desktop/Projects/Example") {
+		t.Error("a path did not match a prefix written in the same case")
 	}
 	if HasPathPrefix("/Users/x/other/thing", typed) {
 		t.Error("matched an unrelated path")
