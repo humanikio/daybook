@@ -133,8 +133,13 @@ seconds**. Backfilling a week takes fourteen.
 
 ## Privacy
 
-**Nothing leaves your machine.** No telemetry, no sync, no network calls — the
-only setting that touches a network talks to your own git remotes.
+**No telemetry, no sync, nothing phones home.** The scan is entirely local.
+
+**Narration is the exception, and it is opt-in.** Turning it on sends the day's
+derived facts — your prompts, the assistant's replies, and the commit subjects —
+to Anthropic, through your own account. That is what writing the prose requires.
+Leave it off and nothing ever leaves the machine. It never sends raw transcripts,
+the report, or anything about you.
 
 Redaction runs **before** anything is written: AWS keys, bearer tokens, GitHub
 tokens, private keys. Add your own patterns, or set

@@ -5,9 +5,31 @@ typed to Claude Code, and everything it said back.
 
 ## Two rules
 
-**1. Nothing leaves your machine.** No telemetry, no sync, no analytics, no
-network calls of any kind. `watch.fetch: true` is the only setting that touches
-a network, and it talks to your own git remotes.
+**1. Nothing phones home.** No telemetry, no sync, no analytics. daybook has no
+server and reports nothing about you to anyone.
+
+**The scan is entirely local.** Reading transcripts, joining them against git,
+and writing the report involve no network at all. `watch.fetch: true` is the
+only setting in that path that touches one, and it talks to your own git
+remotes.
+
+**Narration is the exception, and it is off by default.** Writing prose means
+sending the day's derived facts to a model, and there is no way around that:
+
+| sent when narration runs | never sent |
+|---|---|
+| your prompts, as text | the raw transcript files |
+| the assistant's replies | the finished report |
+| commit subjects, shas, file paths | anything identifying you |
+
+It goes through **your own account** — the `claude` you are signed in with, or
+your own API key — so it is covered by whatever agreement you already have.
+daybook holds no credential and adds no relationship of its own.
+
+If that trade is not one you want, `narrate.enabled: false` is the default and
+the deterministic report is complete without it. `privacy.keep_raw_prompts:
+false` narrows it further: counts, commits and timings still work, and no words
+are stored or sent.
 
 **2. Redaction runs before anything is written.** Not after, not on render —
 before the first byte reaches disk.
