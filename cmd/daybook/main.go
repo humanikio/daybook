@@ -883,25 +883,52 @@ func reportBrowser() {
 	b := platform.DetectBrowser()
 	steps := platform.BrowserSetupSteps(b)
 
-	if b.Ready() && len(steps) == 0 {
-		fmt.Println("✓ browser      Claude Code can drive a browser on this machine")
+	fmt.Println("  browser (Claude in Chrome)")
+
+	// Say what the surface IS before saying whether it works. Every other thing
+	// daybook touches is a file on this machine; a browser acts as YOU, in
+	// sessions you are already signed into, and a reader seeing a green tick
+	// should not have to infer that.
+	fmt.Println("      a browser surface acts as you, wherever you are already signed in —")
+	fmt.Println("      mail, banking, admin consoles. daybook does not drive one; this")
+	fmt.Println("      reports whether Claude Code could, for a feature that will need it.")
+
+	if !b.Checkable {
+		// Windows keeps the handshake in the registry. Guessing "not set up" on
+		// every correctly configured machine is worse than admitting the check
+		// does not apply here.
+		fmt.Println("      ? prerequisites are unmeasured on this platform (the handshake is a")
+		fmt.Println("        registry key, not a file) — see docs/browser.md for the checklist")
 		return
 	}
-	if !b.Checkable {
-		// Windows keeps the manifest in the registry, so a path check would
-		// call every correct machine broken. Unknown is the honest answer.
-		fmt.Println("  ? browser    cannot be checked on this platform (the manifest is a registry key)")
+
+	// Itemised, not a verdict. When this stops working the question is WHICH of
+	// these changed, and a single line cannot answer it.
+	mark := func(ok bool, yes, no string) {
+		if ok {
+			fmt.Printf("      ✓ %s\n", yes)
+		} else {
+			fmt.Printf("      ✗ %s\n", no)
+		}
+	}
+	if b.ManifestPath != "" {
+		fmt.Printf("      ✓ handshake written: %s\n", b.ManifestPath)
 	} else {
-		fmt.Println("  ! browser    not ready — Claude Code could not drive a browser here")
+		fmt.Println("      ✗ no native-messaging handshake — the extension cannot reach Claude Code")
 	}
+	mark(b.Paired, "extension paired with Claude Code", "no paired extension recorded here")
+	// LOCAL, and said so. Pairing is per account, so a browser on another
+	// machine can be reachable while this sees nothing.
+	mark(b.Running, "a browser is running (local check only)", "no browser running on this machine")
+	mark(!b.APIKey.Any(), "ANTHROPIC_API_KEY is not set", "ANTHROPIC_API_KEY is set — this alone turns the browser off")
+
+	if len(steps) == 0 {
+		fmt.Println("      → ready")
+		return
+	}
+	fmt.Printf("      → %s remaining:\n", plural(len(steps), "step"))
 	for _, st := range steps {
-		fmt.Printf("      · %s\n", st)
-	}
-	if b.APIKey.Any() {
-		// The one that surprises people: nothing in the browser configuration
-		// is wrong, and it still will not work.
-		fmt.Println("      note: this is the silent one — the flag can be set, the extension")
-		fmt.Println("            paired, the browser open, and it stays off while that key exists.")
+		fmt.Printf("        · %s\n", st)
 	}
 	return
 }
