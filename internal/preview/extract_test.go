@@ -82,10 +82,10 @@ func TestDedupeSeparatesDirectories(t *testing.T) {
 // checking something else, and honouring it would call every slow app broken.
 func TestBootWaitTreatsTheObservationAsAFloor(t *testing.T) {
 	cases := map[int]time.Duration{
-		0:   15 * time.Second, // never observed → a sane minimum
-		2:   15 * time.Second, // too short to have been a real boot wait
-		25:  37 * time.Second, // observed, plus half again: nobody is watching now
-		600: 3 * time.Minute,  // capped
+		0:   15 * time.Second,         // never observed → a sane minimum
+		2:   15 * time.Second,         // too short to have been a real boot wait
+		25:  37500 * time.Millisecond, // observed plus half again — nobody is watching now
+		600: 3 * time.Minute,          // capped
 	}
 	for observed, want := range cases {
 		if got := (Server{BootSeconds: observed}).BootWait(); got != want {
