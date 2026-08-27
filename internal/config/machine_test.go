@@ -40,3 +40,30 @@ func TestBaseStripsOnlyTheCollisionSuffix(t *testing.T) {
 		}
 	}
 }
+
+// The folder gate is a path prefix, so one watched umbrella opts in every
+// repository under it. The name list is how you say which of them you meant.
+func TestPreviewAllowsRepo(t *testing.T) {
+	// Empty is the absence of an opinion, not "none". Reading it as "none"
+	// would switch screenshots off for every config that already exists.
+	none := Config{}
+	for _, n := range []string{"anything", "at-all", ""} {
+		if !none.PreviewAllowsRepo(n) {
+			t.Errorf("an empty list excluded %q — it must mean all of them", n)
+		}
+	}
+
+	c := Config{Preview: Preview{Repos: []string{"frontend", "  Docs  "}}}
+	for name, want := range map[string]bool{
+		"frontend": true,
+		"Frontend": true, // the catalogue's casing is not the user's
+		"Docs":     true,
+		"docs":     true, // and whitespace around a listed name is a typo, not a choice
+		"api":      false,
+		"":         false,
+	} {
+		if got := c.PreviewAllowsRepo(name); got != want {
+			t.Errorf("PreviewAllowsRepo(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

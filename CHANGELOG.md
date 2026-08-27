@@ -4,6 +4,40 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.2
+
+### Choosing which repositories get photographed
+
+The folder gate is matched by a path prefix. Watching one umbrella folder that
+holds twenty-three repositories therefore opted in all twenty-three, and the
+only way to say otherwise was to split the umbrella into twenty-three watch
+entries — changing what is watched in order to change what is photographed.
+
+`preview.repos` narrows the capture by name. An empty or absent list means every
+repository under a folder marked `preview: true`, so nothing changes for a
+config that already exists.
+
+`daybook config edit` lists the repositories it actually found under those
+folders before asking, because naming twenty-three of them from memory is not
+something anyone can do, and a name typed wrong would otherwise fail by simply
+never matching. A name that matches nothing is reported rather than accepted.
+A run that skips a repository says so, since a list that silently drops things
+reads exactly like a day on which nothing happened in them.
+
+### HTML is reachable from the CLI
+
+`output.formats` decides whether an HTML report is written every day. It was a
+real setting with no way to reach it short of editing YAML by hand, so the
+default — HTML only on days with screenshots — was effectively the only option.
+
+That default is how a report ends up with today's markdown beside yesterday's
+HTML: a capture run writes both, the next scheduled run has no pictures, writes
+markdown only, and leaves the HTML behind. Both files are correct and they
+disagree.
+
+`config edit` now has a Formats row. Markdown is not offered as a choice because
+it is not one.
+
 ## v0.3.1
 
 ### The scheduler picks up new code

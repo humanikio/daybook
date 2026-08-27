@@ -163,6 +163,31 @@ type Preview struct {
 	// yourself is reasonable; having it seize the browser at 22:00 while you are
 	// using it is not, so it is opted into rather than inherited.
 	OnSchedule bool `yaml:"on_schedule"`
+	// Repos narrows the capture to particular repositories by name.
+	//
+	// Empty means every repository under a folder marked `preview: true`, which
+	// is what the folder-level gate already meant. It exists because that gate
+	// is matched by path prefix, so one watched umbrella containing twenty-three
+	// repositories opted in all twenty-three and there was no way to say
+	// otherwise without splitting the umbrella into twenty-three watch entries.
+	Repos []string `yaml:"repos,omitempty"`
+}
+
+// PreviewAllowsRepo reports whether a repository may be photographed.
+//
+// The folder gate decides where daybook may look; this decides which of the
+// repositories it finds there are wanted. An empty list is not "none" — it is
+// the absence of an opinion, and means every repository the folder gate covers.
+func (c Config) PreviewAllowsRepo(name string) bool {
+	if len(c.Preview.Repos) == 0 {
+		return true
+	}
+	for _, r := range c.Preview.Repos {
+		if strings.EqualFold(strings.TrimSpace(r), name) {
+			return true
+		}
+	}
+	return false
 }
 
 type Privacy struct {
@@ -727,6 +752,17 @@ func Render(cfg Config) []byte {
 	w("  # Photograph as part of the nightly run. This drives your real browser")
 	w("  # and acts as you while it does, so it is off unless you ask for it.")
 	w("  on_schedule: %v", cfg.Preview.OnSchedule)
+	if len(cfg.Preview.Repos) > 0 {
+		w("  # Only these repositories. Remove the list to photograph every one")
+		w("  # under a folder marked `preview: true`.")
+		w("  repos:")
+		for _, r := range cfg.Preview.Repos {
+			w("    - %s", r)
+		}
+	} else {
+		w("  # repos: [] would narrow this to particular repositories by name.")
+		w("  # Absent means every one under a folder marked `preview: true`.")
+	}
 	w("  # One capture session. Much longer than narrate.timeout on purpose:")
 	w("  # loading pages and clicking through is not comparable to one request.")
 	w("  timeout: %q", cfg.Preview.Timeout)

@@ -68,14 +68,34 @@ func shoot(cfg config.Config, date string, dryRun, loud bool) error {
 			covered = append(covered, previewServer(s))
 		}
 	}
+	// The name allowlist, applied once and here. Capabilities are chosen from
+	// the repos these servers serve, so narrowing the servers narrows the
+	// capabilities with them and there is no second place to keep in step.
+	//
+	// The folder gate is matched by path prefix, so one watched umbrella opted in
+	// every repository beneath it. This is how you say which of them you meant.
 	var wanted []model.Server
+	var excluded []string
 	for _, s := range preview.PickPerRepo(covered) {
+		if !cfg.PreviewAllowsRepo(s.Repo) {
+			excluded = appendOnce(excluded, s.Repo)
+			continue
+		}
 		wanted = append(wanted, model.Server{
 			Command: s.Command, Dir: s.Dir, BootSeconds: s.BootSeconds,
 			Port: s.Port, At: s.At, Repo: s.Repo,
 		})
 	}
+	if len(excluded) > 0 {
+		// Said out loud. A list that silently drops things reads exactly like a
+		// day on which nothing happened in those repos.
+		fmt.Printf("  not photographing %s — not in preview.repos\n", strings.Join(excluded, ", "))
+	}
 	if len(wanted) == 0 {
+		if len(excluded) > 0 {
+			return fmt.Errorf("every repo with a recorded server is excluded by preview.repos\n"+
+				"  excluded: %s\n  `daybook config edit` changes the list", strings.Join(excluded, ", "))
+		}
 		return fmt.Errorf("no server was recorded in a folder marked for screenshots\n" +
 			"  `daybook watch` shows which folders are marked")
 	}

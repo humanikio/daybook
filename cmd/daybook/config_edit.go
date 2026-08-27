@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,7 @@ func cmdConfigEdit(args []string) error {
 			{Label: "Runs at", Value: describeSchedule(cfg)},
 			{Label: "Catch up", Value: yesNo(cfg.Schedule.CatchUp)},
 			{Label: "Reports in", Value: cfg.Output.Root},
+			{Label: "Formats", Value: describeFormats(cfg)},
 			{Label: "Narration", Value: describeNarration(cfg)},
 			{Label: "Window", Value: cfg.Window.Length},
 			{Label: "Keep prompts", Value: yesNo(cfg.Privacy.KeepRawPrompts)},
@@ -84,15 +86,17 @@ func cmdConfigEdit(args []string) error {
 				continue
 			}
 		case 5:
-			chooseNarration(&cfg, colour)
+			editFormats(&cfg)
 		case 6:
-			cfg.Window.Length = tui.Prompt("how far back each run looks", cfg.Window.Length)
+			chooseNarration(&cfg, colour)
 		case 7:
+			cfg.Window.Length = tui.Prompt("how far back each run looks", cfg.Window.Length)
+		case 8:
 			cfg.Privacy.KeepRawPrompts = !cfg.Privacy.KeepRawPrompts
 			if !cfg.Privacy.KeepRawPrompts {
 				fmt.Println("  prompt text will no longer be stored — counts and commits still are")
 			}
-		case 8:
+		case 9:
 			editPreview(&cfg)
 		}
 
@@ -173,6 +177,8 @@ func editPreview(cfg *config.Config) {
 	sched := strings.ToLower(tui.Prompt("photograph on the nightly run too? (y/n)", yesNo(cfg.Preview.OnSchedule)))
 	cfg.Preview.OnSchedule = sched == "y" || sched == "yes"
 
+	pickPreviewRepos(cfg)
+
 	// The second gate. Enabled alone does nothing, and a switch that appears to
 	// be on while nothing happens is the worst outcome here.
 	var on_ []string
@@ -191,6 +197,104 @@ func editPreview(cfg *config.Config) {
 	fmt.Println()
 }
 
+// pickPreviewRepos narrows the capture to particular repositories.
+//
+// The folder gate is a path prefix, so watching one umbrella opts in every
+// repository under it. Listing what is actually there is the point: naming
+// twenty-three repositories from memory is not something anyone can do, and a
+// name typed wrong fails silently by simply never matching.
+func pickPreviewRepos(cfg *config.Config) {
+	found := vcs.Discover(*cfg)
+	var names []string
+	for _, r := range found {
+		if cfg.PreviewCovers(r.Root) {
+			names = appendOnce(names, r.Name)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	sort.Strings(names)
+
+	fmt.Println()
+	fmt.Printf("  %s under the folders you photograph:\n", plural(len(names), "repo"))
+	fmt.Printf("    %s\n", strings.Join(names, ", "))
+	fmt.Println("  Leave blank for all of them, or list the ones you mean.")
+
+	cur := strings.Join(cfg.Preview.Repos, ", ")
+	in := strings.TrimSpace(tui.Prompt("photograph which repos", cur))
+	if in == "" {
+		cfg.Preview.Repos = nil
+		return
+	}
+
+	var picked, unknown []string
+	for _, raw := range strings.Split(in, ",") {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		match := ""
+		for _, n := range names {
+			if strings.EqualFold(n, name) {
+				match = n
+				break
+			}
+		}
+		if match == "" {
+			unknown = append(unknown, name)
+			continue
+		}
+		picked = appendOnce(picked, match)
+	}
+	// A name that matches nothing would leave the capture quietly doing less
+	// than asked, which is the failure this whole gate exists to make visible.
+	for _, u := range unknown {
+		fmt.Printf("  ! no repo called %q under those folders — ignoring it\n", u)
+	}
+	cfg.Preview.Repos = picked
+	if len(picked) == 0 {
+		fmt.Println("  nothing matched, so all of them")
+	}
+}
+
+// editFormats decides whether an HTML report is written every time.
+//
+// Markdown is not offered as a choice because it is not one: it renders in a
+// terminal, an editor, a pull request and a chat message, and it diffs between
+// days. HTML is written anyway whenever there are screenshots, since markdown
+// cannot carry them — which is how a report can end up with today's markdown
+// beside yesterday's HTML, each correct and the two disagreeing.
+func editFormats(cfg *config.Config) {
+	fmt.Println("  Markdown is always written. HTML carries screenshots and charts,")
+	fmt.Println("  and is written automatically on any day that has pictures.")
+	fmt.Println()
+
+	on := strings.ToLower(tui.Prompt("write HTML every day as well? (y/n)", yesNo(wantsHTML(*cfg))))
+	if on == "y" || on == "yes" {
+		if !wantsHTML(*cfg) {
+			cfg.Output.Formats = append(cfg.Output.Formats, "html")
+		}
+		fmt.Println("  markdown and HTML, every day")
+		return
+	}
+	var keep []string
+	for _, f := range cfg.Output.Formats {
+		if !strings.EqualFold(f, "html") {
+			keep = appendOnce(keep, f)
+		}
+	}
+	cfg.Output.Formats = keep
+	fmt.Println("  markdown, plus HTML on days with screenshots")
+}
+
+func describeFormats(cfg config.Config) string {
+	if wantsHTML(cfg) {
+		return "markdown + html"
+	}
+	return "markdown · html when there are screenshots"
+}
+
 func describePreview(cfg config.Config) string {
 	if !cfg.Preview.Enabled {
 		return "off"
@@ -204,11 +308,15 @@ func describePreview(cfg config.Config) string {
 	if n == 0 {
 		return "on, but no folder opted in"
 	}
+	where := plural(n, "folder")
+	if len(cfg.Preview.Repos) > 0 {
+		where = fmt.Sprintf("%s of %s", plural(len(cfg.Preview.Repos), "repo"), where)
+	}
 	when := "when you run it"
 	if cfg.Preview.OnSchedule {
 		when = "nightly"
 	}
-	return fmt.Sprintf("on · %s · max %d · %s", plural(n, "folder"), cfg.Preview.MaxPhotos, when)
+	return fmt.Sprintf("on · %s · max %d · %s", where, cfg.Preview.MaxPhotos, when)
 }
 
 func describeRoots(cfg config.Config) string {
