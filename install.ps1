@@ -28,8 +28,60 @@ $base = if ($version -eq "latest") {
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $dest = Join-Path $dir "daybook.exe"
 
+$asset = "daybook-windows-$arch.exe"
+
+# Downloaded to a temporary file and verified BEFORE it is put on your PATH.
+# This used to write straight to $dest, so a corrupted or tampered download was
+# already installed and runnable by the time anything could have noticed.
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+
 Write-Host "Downloading daybook (windows/$arch) ..."
-Invoke-WebRequest -Uri "$base/daybook-windows-$arch.exe" -OutFile $dest
+Invoke-WebRequest -Uri "$base/$asset" -OutFile $tmp
+
+if ($env:DAYBOOK_SKIP_VERIFY -eq "1") {
+    Write-Host "  ! skipping checksum verification (DAYBOOK_SKIP_VERIFY=1)"
+} else {
+    # Fails closed. A checksum that cannot be fetched stops the install rather
+    # than proceeding quietly.
+    $sums = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+    try {
+        Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile $sums
+    } catch {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        throw "Could not fetch checksums.txt, so the download cannot be verified."
+    }
+
+    # sha256sum writes "<hash>  <name>". Match the name at the end of the line so
+    # a name that merely contains this one cannot match.
+    # Built with single quotes and concatenation on purpose. Interpolating the
+    # asset name into a double-quoted pattern puts $asset immediately before the
+    # $ anchor, and how that parses is not something to guess at in a script that
+    # decides whether a binary is trustworthy.
+    $pattern = '^([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($asset) + '$'
+    $want = $null
+    foreach ($line in Get-Content $sums) {
+        if ($line -match $pattern) {
+            $want = $Matches[1]
+            break
+        }
+    }
+    Remove-Item $sums -Force -ErrorAction SilentlyContinue
+    if (-not $want) {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        throw "checksums.txt does not list $asset."
+    }
+
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash
+    if ($got -ne $want.ToUpper()) {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        Write-Host "  expected $want"
+        Write-Host "  got      $got"
+        throw "CHECKSUM MISMATCH for $asset. Not installing. This is either a corrupted download or a tampered one."
+    }
+    Write-Host "  checksum ok"
+}
+
+Move-Item -Path $tmp -Destination $dest -Force
 
 # Only append to PATH if it is not already there — running the installer twice
 # should not leave two copies of the same directory in the user's PATH.

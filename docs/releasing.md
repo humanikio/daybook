@@ -154,3 +154,22 @@ one.
 ```sh
 daybook service restart
 ```
+
+## What the release publishes, and why the certificate matters
+
+Per platform: the binary, `<binary>.sig`, and `<binary>.pem`. Plus
+`checksums.txt` covering the binaries and the installers, and both installers.
+
+**The certificate is not optional.** Signing is keyless, so there is no
+long-lived public key — verification needs the short-lived certificate that
+bound the signature to this workflow's OIDC identity. Publishing the `.sig`
+alone ships something nobody outside the job can check.
+
+That is exactly what happened up to v0.3.4: `cosign sign-blob` ran with
+`--output-signature` and no `--output-certificate`, so every release carried
+signatures that could not be verified while the README said each binary was
+signed. Both facts were true and the combination was misleading.
+
+If you change the signing step, check that a downloader can still run the
+verification in [verifying](verifying.md) — signing succeeding is not the same
+as the result being usable.

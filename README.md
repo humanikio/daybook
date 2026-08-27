@@ -171,14 +171,22 @@ It will break eventually. Please open an issue when it does.
 
 [setup](docs/setup.md) · [narration](docs/narration.md) ·
 [schedule](docs/schedule.md) · [privacy](docs/privacy.md) ·
-[screenshots](docs/screenshots.md) · [record format](docs/format.md) ·
+[screenshots](docs/screenshots.md) · [verifying](docs/verifying.md) ·
+[record format](docs/format.md) ·
 [troubleshooting](docs/troubleshooting.md) · [releasing](docs/releasing.md) ·
 [browser detection](docs/browser.md)
 
 Install with Go instead: `go install github.com/humanikio/daybook/cmd/daybook@latest`
 
-Every release binary is [cosign](https://docs.sigstore.dev/)-signed and shipped
-with checksums.
+**The installer verifies what it downloads.** It checks the SHA-256 against
+`checksums.txt` before anything is put on your PATH, and fails closed — a
+checksum it cannot fetch or compute stops the install rather than proceeding
+quietly. If [cosign](https://docs.sigstore.dev/) is already on your machine it
+also verifies the signature, which proves *who built it* rather than only that
+the bytes arrived intact.
+
+Verifying by hand, and what the checks actually prove:
+[installing and verifying](docs/verifying.md).
 
 ## Releases
 

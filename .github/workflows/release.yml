@@ -133,8 +133,16 @@ jobs:
         run: |
           set -eu
           for f in dist/daybook-*; do
-            case "$f" in *.sig) continue ;; esac
-            cosign sign-blob --yes --output-signature "$f.sig" "$f"
+            case "$f" in *.sig|*.pem) continue ;; esac
+            # The CERTIFICATE is published too. Keyless signing has no long-lived
+            # public key: verification needs the short-lived cert that bound the
+            # signature to this workflow's OIDC identity. Publishing the .sig
+            # alone shipped something nobody outside this job could check, while
+            # the README said every binary was signed.
+            cosign sign-blob --yes \
+              --output-signature "$f.sig" \
+              --output-certificate "$f.pem" \
+              "$f"
           done
           ls -la dist
 
@@ -142,7 +150,17 @@ jobs:
         run: |
           set -eu
           cp install.sh install.ps1 dist/
-          (cd dist && sha256sum daybook-* install.sh install.ps1 > checksums.txt)
+          # Checksums cover the binaries and the installers. Not the signatures
+          # or certificates: those authenticate the binaries and are checked by
+          # cosign, and a sha256 of a signature answers no question anyone has.
+          (
+            cd dist
+            for f in daybook-*; do
+              case "$f" in *.sig|*.pem) continue ;; esac
+              sha256sum "$f"
+            done
+            sha256sum install.sh install.ps1
+          ) > dist/checksums.txt
 
       # THE RELEASE PAGE IS WHERE THE INSTALL DOCS POINT. An empty body there is
       # a reader landing on an asset list with nothing telling them what changed

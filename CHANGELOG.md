@@ -4,6 +4,42 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.5
+
+### The installer verifies what it downloads
+
+It did not. `install.sh` fetched a binary and moved it onto your PATH without
+checking anything, and `install.ps1` was worse — it downloaded straight to the
+destination, so a corrupted or tampered file was installed and runnable before
+anything could have noticed. Meanwhile the README said every release was signed
+and shipped with checksums. Both were published. Neither was read.
+
+Both installers now download to a temporary file, verify the SHA-256 against
+`checksums.txt`, and only then install. They **fail closed**: a checksum that
+cannot be fetched, or a machine with no SHA-256 tool, stops the install rather
+than continuing quietly. `DAYBOOK_SKIP_VERIFY=1` is the deliberate way past it.
+
+Where `cosign` is already installed, `install.sh` also verifies the signature
+and pins the certificate identity to this repository's release workflow running
+on a tag. A signature from *some* GitHub workflow is not the same claim.
+
+### Signatures are now verifiable at all
+
+Signing is keyless, so there is no long-lived public key: verification needs the
+short-lived certificate that bound the signature to the workflow's identity.
+`cosign sign-blob` was run with `--output-signature` and no
+`--output-certificate`, so every release up to v0.3.4 published a `.sig` that
+**nobody outside the workflow could check**.
+
+Releases now publish `<binary>.pem` alongside. The installer treats a missing
+certificate as missing rather than as wrong, so older releases still install on
+the checksum alone and say the signature was not published.
+
+### `docs/verifying.md`
+
+What the installer checks, what each check proves and does not prove, and the
+commands to verify a release by hand.
+
 ## v0.3.4
 
 ### `verify` reports a scheduler running old code
