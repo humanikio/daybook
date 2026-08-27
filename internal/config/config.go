@@ -155,6 +155,14 @@ type Preview struct {
 	// all; starting one means running project code unattended, and that is a
 	// different promise.
 	StartServers bool `yaml:"start_servers"`
+	// OnSchedule runs the capture as part of the nightly run.
+	//
+	// Off by default, and separately from Enabled, because this one is not about
+	// risk to your machine but about the machine being yours. The capture drives
+	// your real browser and acts as you for the duration. Kicking that off
+	// yourself is reasonable; having it seize the browser at 22:00 while you are
+	// using it is not, so it is opted into rather than inherited.
+	OnSchedule bool `yaml:"on_schedule"`
 }
 
 type Privacy struct {
@@ -253,7 +261,7 @@ func Default() Config {
 		Schedule: Schedule{At: "23:30", CatchUp: true},
 		Output:   Output{Root: "~/Desktop/daybook", NoRemote: "committed"},
 		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
-		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false, Timeout: "20m"},
+		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false, OnSchedule: false, Timeout: "20m"},
 		Privacy: Privacy{
 			KeepRawPrompts: true,
 			Redact: []Redaction{
@@ -716,6 +724,9 @@ func Render(cfg Config) []byte {
 	w("  # Launch an app that is not already running. Using one you already have")
 	w("  # up carries no risk; starting one runs project code unattended.")
 	w("  start_servers: %v", cfg.Preview.StartServers)
+	w("  # Photograph as part of the nightly run. This drives your real browser")
+	w("  # and acts as you while it does, so it is off unless you ask for it.")
+	w("  on_schedule: %v", cfg.Preview.OnSchedule)
 	w("  # One capture session. Much longer than narrate.timeout on purpose:")
 	w("  # loading pages and clicking through is not comparable to one request.")
 	w("  timeout: %q", cfg.Preview.Timeout)

@@ -165,6 +165,14 @@ func editPreview(cfg *config.Config) {
 	start := strings.ToLower(tui.Prompt("start apps that are not already running? (y/n)", yesNo(cfg.Preview.StartServers)))
 	cfg.Preview.StartServers = start == "y" || start == "yes"
 
+	// Asked separately from enabling, and phrased as what it does to you rather
+	// than what it does for you. Running it yourself is a choice; having it take
+	// the browser at 22:00 is something you should have to say yes to.
+	fmt.Println()
+	fmt.Println("  On a schedule, the capture takes over your browser at the run time.")
+	sched := strings.ToLower(tui.Prompt("photograph on the nightly run too? (y/n)", yesNo(cfg.Preview.OnSchedule)))
+	cfg.Preview.OnSchedule = sched == "y" || sched == "yes"
+
 	// The second gate. Enabled alone does nothing, and a switch that appears to
 	// be on while nothing happens is the worst outcome here.
 	var on_ []string
@@ -196,7 +204,11 @@ func describePreview(cfg config.Config) string {
 	if n == 0 {
 		return "on, but no folder opted in"
 	}
-	return fmt.Sprintf("on · %s · max %d", plural(n, "folder"), cfg.Preview.MaxPhotos)
+	when := "when you run it"
+	if cfg.Preview.OnSchedule {
+		when = "nightly"
+	}
+	return fmt.Sprintf("on · %s · max %d · %s", plural(n, "folder"), cfg.Preview.MaxPhotos, when)
 }
 
 func describeRoots(cfg config.Config) string {

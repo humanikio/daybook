@@ -423,6 +423,14 @@ func serveLoop(cfg config.Config) error {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
 
+	// What this process was started from. Config is re-read every tick, but code
+	// is not: a scheduler installed once ran for twenty-five hours across three
+	// rebuilds and an entire release, still executing the binary it was launched
+	// with. It kept reporting itself as running while producing output from code
+	// that no longer existed on disk, which is the worst shape a stale process
+	// can take — invisible, and confidently wrong.
+	self := binaryStamp()
+
 	for {
 		// Config is re-read every tick rather than captured at start. The run
 		// time is the field people change most, and "I changed it and it did
@@ -436,6 +444,15 @@ func serveLoop(cfg config.Config) error {
 		var served time.Time
 		if st.Slot != "" {
 			served, _ = time.Parse(time.RFC3339, st.Slot)
+		}
+
+		// Exiting is how this upgrades. The service is installed with KeepAlive,
+		// so leaving hands the next start to launchd, which execs the new binary.
+		// Checked before running rather than after, so a run never straddles two
+		// versions.
+		if now := binaryStamp(); now != "" && self != "" && now != self {
+			log.Printf("the daybook binary changed on disk — exiting so it restarts on the new one")
+			return nil
 		}
 
 		if slot, due := schedule.Due(live, served, time.Now()); due {
@@ -468,6 +485,18 @@ func runScheduled(cfg config.Config, slot time.Time) error {
 		}
 	}
 
+	// Photographs, only if asked for. The capture drives the real browser and
+	// acts as the user while it does, so it stays opted-in rather than inherited
+	// from preview.enabled. It runs after narration because the capability list
+	// it illustrates is what narration produces.
+	if cfg.Preview.Enabled && cfg.Preview.OnSchedule {
+		if err := shootDay(cfg, day.Date); err != nil {
+			// Same reasoning as narration: the report is already on disk, and a
+			// failed capture is not a reason to run the whole scan again.
+			log.Printf("screenshots: %v", err)
+		}
+	}
+
 	st := loadLastRun(cfg)
 	st.Slot = slot.Format(time.RFC3339)
 	if err := saveLastRun(cfg, st); err != nil {
@@ -475,6 +504,24 @@ func runScheduled(cfg config.Config, slot time.Time) error {
 	}
 	log.Printf("wrote %s · %d streams · %d commits", day.Date, day.Totals.Streams, day.Totals.Commits)
 	return nil
+}
+
+// binaryStamp identifies the executable this process is running, so a replaced
+// one can be noticed. Size and modification time, not a hash: this runs every
+// minute for months and reading the whole binary each time to detect something
+// that happens once a release is the wrong trade. Empty when it cannot be read,
+// and an empty stamp never triggers a restart — failing to stat the executable
+// is not evidence that it changed.
+func binaryStamp() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	fi, err := os.Stat(exe)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%d", fi.Size(), fi.ModTime().UnixNano())
 }
 
 func svcStatus(cfg config.Config) (bool, bool, error) { return svc.Status(cfg) }

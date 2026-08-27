@@ -4,6 +4,40 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.1
+
+### The scheduler picks up new code
+
+An installed scheduler ran for twenty-five hours across three rebuilds and a
+release, still executing the binary it was launched with. Config is re-read
+every tick; code was not. It reported itself as running and up to date while
+producing output from code that no longer existed on disk — a stale process in
+its worst shape, invisible and confidently wrong.
+
+`serve` now notices its own binary being replaced and exits. The service is
+installed with KeepAlive, so leaving hands the next start back to the service
+manager, which execs the new one. Checked before a run rather than after, so a
+run never straddles two versions. A stamp that cannot be read counts as "could
+not tell" and never as a change, because a false positive here is a restart
+loop.
+
+Upgrading still means installing the new binary. This makes the installation
+take effect instead of waiting for a reboot.
+
+### Screenshots on the nightly run
+
+`preview.on_schedule`, off by default and asked for separately from
+`preview.enabled`. The capture drives your real browser and acts as you while it
+does. Kicking that off yourself is reasonable; having it seize the browser at
+22:00 while you are using it is not, so it is opted into rather than inherited.
+
+`daybook config edit` asks for it under Screenshots, phrased as what it does to
+you rather than what it does for you, and the summary line now says whether
+capture happens nightly or only when you run it.
+
+Without this, a scheduled run produced a report with no pictures in it and no
+indication why — the capture was never part of that path.
+
 ## v0.3.0
 
 ### Screenshots of what shipped

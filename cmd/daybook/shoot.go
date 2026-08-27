@@ -32,7 +32,15 @@ func cmdShoot(args []string) error {
 	if err != nil {
 		return err
 	}
+	return shoot(cfg, date, *dry, *verbose)
+}
 
+// shootDay is the scheduler's entry to the same path the command runs.
+func shootDay(cfg config.Config, date string) error {
+	return shoot(cfg, date, false, false)
+}
+
+func shoot(cfg config.Config, date string, dryRun, loud bool) error {
 	if !cfg.Preview.Enabled {
 		return fmt.Errorf("screenshots are off — `daybook config edit`, or `daybook watch <path> --preview`")
 	}
@@ -175,7 +183,7 @@ func cmdShoot(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.PreviewTimeout()+10*time.Minute)
 	defer cancel()
 
-	if *dry {
+	if dryRun {
 		fmt.Printf("\n  would photograph up to %d of:\n", cfg.Preview.MaxPhotos)
 		for _, c := range caps {
 			fmt.Printf("    · %s\n", clipStr(c, 76))
@@ -196,7 +204,7 @@ func cmdShoot(args []string) error {
 	}
 	fmt.Printf("\n  looking at %s…\n", plural(len(caps), "capability", "capabilities"))
 
-	if *verbose {
+	if loud {
 		run = logging(run)
 	}
 	shots, err := preview.Capture(ctx, run, req)
