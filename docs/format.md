@@ -23,6 +23,19 @@ directory never collide on the same file.
 
 `schema: 1`. Types live in `internal/model` and nothing else defines a field.
 
+Two fields are worth knowing about by name:
+
+`failed[]` holds error results as `{kind, text}`. `kind` is one of `broke` (the
+work itself failing), `refused` (a tool call declined by you or the harness),
+`unavailable` (a model or tool that was not there), or `command` (the agent's
+own malformed call). Only `broke` is reported as breakage; the rest are counted
+in one line. A raw file written before this change stores plain strings, and
+still loads — they are classified on read.
+
+`shots[]` holds screenshots as `{capability, file, url, note, at}`. `capability`
+matches a `shipped[].what` exactly, because the agent identifies it by number
+and daybook resolves the wording rather than trusting the agent to repeat it.
+
 Notable fields:
 
 - `streams[].confidence` on each commit — `exact`, `repo`, or `none`. Permanent,

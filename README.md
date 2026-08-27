@@ -59,7 +59,7 @@ hardest**. daybook reads both sides and says which is which.
 | | |
 |---|---|
 | **Decisions** | *"Excluded shared infra costs from the P&L on the grounds they are not this product's."* Recorded nowhere else. |
-| **What broke** | 282 failed commands in one day. Failures are where the time went, and the part nobody writes down. |
+| **What broke** | A failing build or type check, separated from the tool calls you declined and the paths the agent mistyped. One real day reported 45 failures; one of them was the software. |
 | **Work that never committed** | Research, an ops run, a client call, a data room. Days that look empty in git and were not. |
 | **What is stuck on your machine** | Unpushed commits *with their subjects*, uncommitted files, per branch. "14 unpushed" is a number nobody can act on. |
 | **What is unproven** | A running ledger of shipped-but-untested work, closed only against citable evidence, sorted oldest first. |
@@ -121,7 +121,9 @@ daybook scan                 today, against the last 24h
 daybook day [date]           read it — date, "today" or "yesterday"
 daybook week                 rollup, with a per-day table
 daybook open                 work that has not finished proving itself
+daybook shoot                photograph where the work lives — off by default
 daybook config edit          change settings with the arrow keys
+daybook upgrade              check whether a newer release exists
 daybook service install      run it nightly, as you, never as root
 daybook verify               check everything in one pass
 ```
@@ -135,11 +137,15 @@ seconds**. Backfilling a week takes fourteen.
 
 **No telemetry, no sync, nothing phones home.** The scan is entirely local.
 
-**Narration is the exception, and it is opt-in.** Turning it on sends the day's
-derived facts — your prompts, the assistant's replies, and the commit subjects —
-to Anthropic, through your own account. That is what writing the prose requires.
-Leave it off and nothing ever leaves the machine. It never sends raw transcripts,
-the report, or anything about you.
+**Two features are exceptions, and both are opt-in.** Narration sends the day's
+derived facts — your prompts, the assistant's replies, the commit subjects — to
+Anthropic through your own account. It never sends raw transcripts, the report,
+or anything about you.
+
+[Screenshots](docs/screenshots.md) go further: they drive your real browser, as
+you, and write pictures of real screens into your reports folder. Redaction runs
+over text before it reaches disk and cannot run over a photograph. Leave both off
+and nothing ever leaves the machine.
 
 Redaction runs **before** anything is written: AWS keys, bearer tokens, GitHub
 tokens, private keys. Add your own patterns, or set
@@ -165,8 +171,8 @@ It will break eventually. Please open an issue when it does.
 
 [setup](docs/setup.md) · [narration](docs/narration.md) ·
 [schedule](docs/schedule.md) · [privacy](docs/privacy.md) ·
-[record format](docs/format.md) · [troubleshooting](docs/troubleshooting.md) ·
-[releasing](docs/releasing.md) ·
+[screenshots](docs/screenshots.md) · [record format](docs/format.md) ·
+[troubleshooting](docs/troubleshooting.md) · [releasing](docs/releasing.md) ·
 [browser detection](docs/browser.md)
 
 Install with Go instead: `go install github.com/humanikio/daybook/cmd/daybook@latest`

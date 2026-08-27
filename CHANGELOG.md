@@ -4,6 +4,44 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.3
+
+Documentation only. No behaviour changes.
+
+### Screenshots were undocumented
+
+Every setting the last three releases added — the two gates, `max_photos`,
+`per_capability`, `start_servers`, `on_schedule`, `repos`, and `output.formats`
+— appeared in no document, and `config.example.yaml` had no `preview` block at
+all. `docs/setup.md` points at that file as the annotated reference, so the
+reference described a version of daybook that no longer existed. `daybook shoot`
+and `daybook upgrade` were not mentioned anywhere either.
+
+`docs/screenshots.md` covers all of it, and a test now loads
+`config.example.yaml` on every build so it cannot drift from what the code
+accepts.
+
+### The privacy pages were incomplete
+
+Both `docs/privacy.md` and the README said narration was **the** exception to
+"nothing leaves this machine". Screenshots are a second and larger one: they go
+to Anthropic the same way, and they also drive your real browser signed in as
+you, and write photographs of real screens to disk.
+
+Redaction cannot help there. It runs over text before it reaches disk and cannot
+run over a picture. Both pages now say so.
+
+### Claims that had stopped being true
+
+`docs/browser.md` said daybook does not drive a browser and described the
+capture under "when the feature lands" — it had shipped in v0.3.0.
+
+The README described "what broke" as every failed command in a day, which is the
+framing v0.3.0 removed from the code.
+
+`docs/format.md` did not describe `failed[]` or `shots[]`, both of which have a
+shape worth knowing before reading a raw file.
+
 ## v0.3.2
 
 ### Choosing which repositories get photographed

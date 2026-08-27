@@ -1,9 +1,9 @@
 # Browser detection
 
 `daybook verify` reports whether Claude Code could drive a browser on this
-machine. **daybook does not drive one yet** — this exists ahead of a feature
-that will, because every prerequisite here fails *silently* and the capability
-is invisible by construction: absent from `claude mcp list`, absent from any
+machine. **[Screenshots](screenshots.md) need this**, and are off by default —
+this check exists because every prerequisite here fails *silently* and the
+capability is invisible by construction: absent from `claude mcp list`, absent from any
 config file unless you already knew to add it, and switched off entirely by an
 environment variable nobody associates with browsers.
 
@@ -53,7 +53,7 @@ session can enumerate those, because listing connected browsers is itself a tool
 inside that session. So "no browser running" means *none reachable in the only
 way this process can observe*, not *none reachable*.
 
-## When the feature lands
+## The two flags daybook passes
 
 Two gates, and having exactly one is the silent-failure shape — the tools appear
 in the agent's context and every call is refused:
@@ -70,12 +70,19 @@ allowed_tools: [Read, Grep, Glob, mcp__claude-in-chrome]
 theirs — `mcp__claude-in-chrome__computer`. The underscored spelling matches
 nothing and refuses every call while reading as correctly configured.
 
+daybook passes both flags itself when it runs a capture. It adds `Bash` to that
+allowlist only when `preview.start_servers` is on, so the agent can start and
+stop the apps it needs.
+
 ## A note on blast radius
 
 Every other tool acts on this machine, inside a directory you chose. The browser
 acts **as you**, wherever you are already signed in — mail, banking, admin
-consoles — and no directory bounds any of it. Worth a second thought before
-turning it on, whenever that becomes possible here.
+consoles — and no directory bounds any of it.
+
+This is why screenshots are off by default, why the folder gate exists on top of
+the master switch, and why running the capture nightly is a third switch again.
+See [privacy](privacy.md) for what ends up on disk as a result.
 
 ## Setting it up
 

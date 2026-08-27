@@ -13,8 +13,11 @@ and writing the report involve no network at all. `watch.fetch: true` is the
 only setting in that path that touches one, and it talks to your own git
 remotes.
 
-**Narration is the exception, and it is off by default.** Writing prose means
-sending the day's derived facts to a model, and there is no way around that:
+**Two features are exceptions, and both are off by default.** Narration is the
+smaller one. Screenshots are the larger one, and are covered below.
+
+Writing prose means sending the day's derived facts to a model, and there is no
+way around that:
 
 | sent when narration runs | never sent |
 |---|---|
@@ -30,6 +33,31 @@ If that trade is not one you want, `narrate.enabled: false` is the default and
 the deterministic report is complete without it. `privacy.keep_raw_prompts:
 false` narrows it further: counts, commits and timings still work, and no words
 are stored or sent.
+
+**Screenshots are the larger exception, and off by default.** See
+[screenshots](screenshots.md) for the settings; what matters here is what it
+costs you.
+
+It sends the same way narration does, through your own account. It also does two
+things narration never does:
+
+| | |
+|---|---|
+| **Drives your real browser, as you** | Whatever that browser can reach, the capture can reach — production admin, customer records, an email tab left open. |
+| **Writes photographs of real screens to disk** | They land in your reports folder as ordinary image files. |
+
+**Redaction cannot help here.** It runs over text before it reaches disk. It
+cannot run over a picture of a screen. If your environment holds real customer
+names, they are in the images, and they stay there until you delete them.
+
+Three settings widen this further, each off by default:
+`preview.start_servers` runs your project's code unattended,
+`preview.on_schedule` does all of it at 22:00 without you present, and a watched
+folder without `preview.repos` opts in every repository beneath it.
+
+Point it at a development environment where you can, and keep the reports folder
+private — it already held your prompt history, and now holds pictures of your
+product.
 
 **2. Redaction runs before anything is written.** Not after, not on render —
 before the first byte reaches disk.

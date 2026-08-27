@@ -38,6 +38,11 @@ output:
   root: "~/Desktop/daybook"
   # The bar for repos with no remote, where "shipped" is undefined.
   no_remote: committed      # committed | exclude
+  # Markdown is always written. HTML carries screenshots, and is written
+  # automatically on any day that has them — so a day with pictures and the
+  # day after it can end up with markdown and HTML that disagree. List "html"
+  # here to write both every time.
+  formats: []             # [] | ["html"]
 
 narrate:
   enabled: false      # uses the claude you are already signed in with
@@ -46,6 +51,31 @@ narrate:
   model: ""           # empty = the API provider's default
   effort: ""          # low | medium | high | xhigh | max (api only)
   timeout: "5m"
+
+# Photograph where a new feature lives in the product, so somebody who was not
+# there can find it. See docs/screenshots.md.
+#
+# TWO GATES, and neither alone does anything: this switch, and `preview: true`
+# on a watched folder above. A switch that appears to be on while nothing
+# happens is the worst outcome here, so both are asked for separately.
+preview:
+  enabled: false
+  max_photos: 6           # a whole run, not per repo
+  per_capability: 1       # so one busy feature cannot take the lot
+  # Launch an app that is not already running. Using one you already have up
+  # carries no risk; starting one runs project code unattended.
+  start_servers: false
+  # Photograph as part of the nightly run. This takes over your real browser
+  # and acts as you while it does, so it is off unless you ask for it.
+  on_schedule: false
+  # Narrow the capture to particular repositories by name. The folder gate is
+  # matched by a path prefix, so watching one folder that holds twenty repos
+  # opts in all twenty; this is how you say which of them you meant. Absent
+  # means every repo under a folder marked `preview: true`.
+  # repos: ["web", "docs"]
+  # One capture session. Much longer than narrate.timeout on purpose: loading
+  # pages and clicking through is not comparable to one request.
+  timeout: "20m"
 
 privacy:
   # Redaction runs before anything reaches disk. Prompts carry pasted

@@ -94,11 +94,32 @@ single change:
 daybook config edit                        # arrow through the settings
 daybook config set narrate.enabled true    # if you know the key
 daybook watch ~/clientwork                 # add a folder
+daybook watch ~/clientwork --preview       # and allow screenshots of it
+daybook unwatch ~/oldwork                  # stop watching one
 daybook schedule 22:00 --days mon,wed,fri
 ```
 
 `config edit` needs a terminal. Everywhere else — a script, CI, a pipe — use
 `config set`, which takes the same values and validates them the same way.
+
+The rows it offers:
+
+| row | what it changes |
+|---|---|
+| Watching | folders scanned, and which of them may be photographed |
+| Commit email | which commits count as yours |
+| Runs at · Catch up | [schedule](schedule.md) |
+| Reports in | where reports land |
+| **Formats** | markdown only, or markdown and HTML every day |
+| Narration | [prose summaries](narration.md) |
+| Window | how far back a run looks |
+| Keep prompts | store prompt text, or only its shape |
+| **Screenshots** | [everything on this page](screenshots.md) |
+
+Screenshots asks four things: whether to enable them, how many pictures at most,
+whether it may start an app that is not running, whether to photograph on the
+nightly run, and which repositories to include. It lists the repositories it
+found rather than asking you to name them from memory.
 
 ## Prose summaries
 
@@ -123,7 +144,9 @@ report is already written by then.
 daybook scan       # read the window, join against git, write the report
 daybook day        # read today
 daybook day 2026-08-23
+daybook shoot      # photograph where today's work lives, if screenshots are on
 daybook verify     # check everything is wired up
+daybook upgrade    # is there a newer release
 ```
 
 `scan` is idempotent — run it as often as you like. A full run over a 1.1GB
@@ -138,4 +161,5 @@ transcript corpus and 44 repositories takes about five seconds.
 Every string is quoted on purpose. Under YAML 1.1 an unquoted `12:00` is the
 integer 43200, `NO` is `false`, and `010` is `8`.
 
-See `config.example.yaml` for the annotated file.
+See `config.example.yaml` for the annotated file. Every key is in it, and a test
+loads it on every build so it cannot drift from what the code accepts.
