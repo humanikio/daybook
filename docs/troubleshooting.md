@@ -100,3 +100,33 @@ daybook verify --config /path/to/config.yaml
 The parsed config is printed with resolved values. Look for a setting that
 became `false` or a number when you wrote a word — an unquoted `no` or `NO` is
 `false` under YAML 1.1, and an unquoted `12:00` is `43200`. Quote every string.
+
+## The scheduler is running old code
+
+`daybook verify` says one of:
+
+```
+! the scheduler is running older code than the binary on disk (started Tue 25 Aug 22:12)
+! the scheduler was started by a version that cannot report what it is running
+```
+
+An upgrade replaces a **file**. It does not replace a **process** that already
+has that file open, so the scheduler keeps serving whatever it was launched with
+until something restarts it — while reporting itself as running, which is what
+makes this worth a check rather than a note.
+
+```sh
+daybook service restart
+```
+
+One installed scheduler ran for twenty-six hours across four releases this way.
+The nightly report came out correct-looking and was produced by code that no
+longer existed on disk.
+
+From v0.3.1 the scheduler notices its own binary being replaced and exits, and
+the service manager starts it again on the new one. That only helps a process
+that already has it, so **the first restart after upgrading past v0.3.0 is
+always manual**. After that it takes care of itself.
+
+The second message means exactly that case: the running process predates the
+recording, so nothing can say what it is on. One restart makes it knowable.

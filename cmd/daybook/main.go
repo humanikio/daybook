@@ -329,6 +329,14 @@ type lastRun struct {
 	Date      string `json:"date,omitempty"`
 	Machine   string `json:"machine,omitempty"`
 	Slot      string `json:"slot,omitempty"`
+	// ServeStamp identifies the binary the running scheduler started from, and
+	// ServeStarted when it did. A scheduler holds the code it was launched with:
+	// one ran for twenty-six hours across four releases, reporting itself as
+	// running while executing a binary that had since been replaced on disk.
+	// Nothing could see that, which is what made it dangerous rather than merely
+	// wrong. Written when serve starts, compared by verify.
+	ServeStamp   string `json:"serveStamp,omitempty"`
+	ServeStarted string `json:"serveStarted,omitempty"`
 }
 
 func lastRunPath(cfg config.Config) string {
@@ -431,6 +439,18 @@ func serveLoop(cfg config.Config) error {
 	// can take — invisible, and confidently wrong.
 	self := binaryStamp()
 
+	// Recorded so something other than this process can tell what it is running.
+	// The exit-on-change check below only helps a process that already has it;
+	// the one it replaced does not, so the first restart after upgrading to it is
+	// always manual. verify is how you find out you need one.
+	if st := loadLastRun(cfg); true {
+		st.ServeStamp = self
+		st.ServeStarted = time.Now().Format(time.RFC3339)
+		if err := saveLastRun(cfg, st); err != nil {
+			log.Printf("could not record what this scheduler is running: %v", err)
+		}
+	}
+
 	for {
 		// Config is re-read every tick rather than captured at start. The run
 		// time is the field people change most, and "I changed it and it did
@@ -522,6 +542,35 @@ func binaryStamp() string {
 		return ""
 	}
 	return fmt.Sprintf("%d-%d", fi.Size(), fi.ModTime().UnixNano())
+}
+
+// schedulerNeedsRestart reports why the running scheduler is not the binary on
+// disk, or "" when there is nothing to say.
+//
+// An upgrade replaces a file. It does not replace a process that already has
+// that file open, so the scheduler keeps serving the code it was launched with
+// until something restarts it — silently, and while reporting itself healthy.
+// That is the failure this exists to make visible.
+func schedulerNeedsRestart(cfg config.Config) string {
+	st := loadLastRun(cfg)
+	now := binaryStamp()
+	switch {
+	case now == "":
+		// Cannot read the executable. Not evidence of anything.
+		return ""
+	case st.ServeStamp == "":
+		// Started by a version that did not record this — which is precisely the
+		// version this check was added to catch. Say what is unknown rather than
+		// guessing, and note that one restart makes it knowable.
+		return "the scheduler was started by a version that cannot report what it is running — restart it once and this becomes checkable"
+	case st.ServeStamp != now:
+		since := ""
+		if t, err := time.Parse(time.RFC3339, st.ServeStarted); err == nil {
+			since = fmt.Sprintf(" (started %s)", t.Format("Mon 2 Jan 15:04"))
+		}
+		return fmt.Sprintf("the scheduler is running older code than the binary on disk%s — an upgrade replaces the file, not the running process", since)
+	}
+	return ""
 }
 
 func svcStatus(cfg config.Config) (bool, bool, error) { return svc.Status(cfg) }
@@ -925,6 +974,10 @@ func cmdVerify(args []string) error {
 	case installed && running:
 		next, _ := schedule.Next(cfg, time.Now())
 		fmt.Printf("✓ scheduler    running · next %s\n", next.Format("Mon 15:04"))
+		if why := schedulerNeedsRestart(cfg); why != "" {
+			fmt.Printf("  ! %s\n", why)
+			fmt.Println("    daybook service restart")
+		}
 	case installed:
 		fmt.Println("  ! scheduler installed but stopped — `daybook service start`")
 	default:

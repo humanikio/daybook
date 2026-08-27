@@ -4,6 +4,34 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.4
+
+### `verify` reports a scheduler running old code
+
+An upgrade replaces a file. It does not replace a process that already has that
+file open, so the scheduler keeps serving the code it was launched with until
+something restarts it — while reporting itself as running.
+
+One installed scheduler did that for twenty-six hours across four releases. The
+binary on disk was replaced twice underneath it. Every nightly report in that
+window was produced by code that no longer existed, and nothing anywhere could
+see it.
+
+`serve` now records which binary it started from, and `verify` compares that
+against the binary on disk:
+
+```
+✓ scheduler    running · next Thu 22:00
+  ! the scheduler is running older code than the binary on disk (started Tue 25 Aug 22:12)
+    daybook service restart
+```
+
+The self-restart added in v0.3.1 only helps a process that already has it, so
+the first restart after upgrading past v0.3.0 is still manual. `verify` now says
+so rather than leaving it to be noticed. A scheduler started by an older version
+reports that it cannot say what it is running, which is the truth and is not the
+same as reporting it up to date.
+
 ## v0.3.3
 
 Documentation only. No behaviour changes.
