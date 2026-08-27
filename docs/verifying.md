@@ -45,6 +45,13 @@ curl -fsSLO "$base/$asset.sig"
 curl -fsSLO "$base/$asset.pem"
 curl -fsSLO "$base/checksums.txt"
 
+# cosign writes the certificate base64-encoded rather than as raw PEM. Decode it
+# if it does not already start with a PEM header — openssl and some cosign
+# versions will not read it otherwise.
+head -c 11 "$asset.pem" | grep -q -- "-----BEGIN" || {
+  base64 -d < "$asset.pem" > cert.pem && mv cert.pem "$asset.pem"
+}
+
 # the bytes
 shasum -a 256 -c --ignore-missing checksums.txt      # or sha256sum -c
 
@@ -70,6 +77,17 @@ thing is recorded in Sigstore's public transparency log.
 
 The consequence is that **the certificate has to be published too**. A `.sig`
 on its own cannot be verified — there is nothing to check it against.
+
+The certificate is published in the form cosign writes it, which is
+base64-encoded rather than raw PEM. `openssl x509` reports "Could not find
+certificate" until it is decoded; the installer normalises this itself.
+
+**The certificate expired ten minutes after the release was built, and that is
+fine.** Fulcio issues short-lived certificates on purpose. Verification does not
+ask whether the certificate is valid *now* — it checks it was valid *when the
+signature was made*, using the timestamp in Sigstore's transparency log. A
+long-lived certificate would be a key to steal; a ten-minute one is not worth
+stealing.
 
 **Releases before v0.3.5 published a `.sig` and no certificate.** They were
 genuinely signed, and nobody outside the workflow could confirm it. The

@@ -115,6 +115,19 @@ if [ "${DAYBOOK_SKIP_VERIFY:-0}" != "1" ] && command -v cosign >/dev/null 2>&1; 
   sig="$(mktemp)"; crt="$(mktemp)"
   if curl -fsSL "${asset_base}/${asset}.sig" -o "$sig" &&
      curl -fsSL "${asset_base}/${asset}.pem" -o "$crt"; then
+    # cosign writes the certificate BASE64-ENCODED, not as raw PEM. Whether
+    # verify-blob accepts that form back is not something to depend on: getting
+    # it wrong rejects a genuine release, which is worse than not checking at
+    # all. Normalise to real PEM here so the format cannot matter.
+    if ! head -c 11 "$crt" 2>/dev/null | grep -q -- "-----BEGIN"; then
+      if base64 -d < "$crt" > "${crt}.dec" 2>/dev/null ||
+         base64 -D < "$crt" > "${crt}.dec" 2>/dev/null; then
+        if head -c 11 "${crt}.dec" 2>/dev/null | grep -q -- "-----BEGIN"; then
+          mv "${crt}.dec" "$crt"
+        fi
+      fi
+      rm -f "${crt}.dec"
+    fi
     if cosign verify-blob \
          --certificate "$crt" --signature "$sig" \
          --certificate-identity-regexp "^https://github.com/${REPO}/\.github/workflows/release\.yml@refs/tags/" \

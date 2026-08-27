@@ -4,6 +4,25 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.3.6
+
+### The installer can read the certificate it downloads
+
+`cosign` writes a certificate **base64-encoded**, not as raw PEM. v0.3.5 handed
+that file straight to `cosign verify-blob` and to readers following the
+by-hand instructions, where `openssl x509` answers "Could not find certificate".
+
+Depending on cosign to accept its own output back is not a safe assumption to
+make in the one step that decides whether a binary is trustworthy: guessing
+wrong rejects a **genuine** release, which is worse than not checking. The
+installer now normalises the certificate to real PEM before verifying, so the
+published format cannot matter.
+
+`docs/verifying.md` decodes it in the by-hand steps, and explains why a
+certificate that expired ten minutes after the build still verifies — Fulcio
+issues short-lived certificates, and verification checks validity at signing
+time against the transparency log, not now.
+
 ## v0.3.5
 
 ### The installer verifies what it downloads
