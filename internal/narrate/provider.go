@@ -17,7 +17,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/humanikio/daybook/internal/config"
@@ -68,15 +71,100 @@ func Resolve(cfg config.Config) (Provider, error) {
 	}
 }
 
+// resolveBinary finds the Claude Code CLI, and does not rely on PATH alone.
+//
+// A scheduled run does not inherit your shell. launchd hands the daemon
+// /usr/bin:/bin:/usr/sbin:/sbin, systemd gives it something similarly bare, and
+// Claude Code installs to ~/.local/bin — so `exec.LookPath("claude")` succeeds
+// every time you run daybook by hand and fails every night at 22:00. It did,
+// silently, on the machine this was written on: narration was skipped and
+// screenshots with it, and the only trace was one line in a log nobody reads.
+//
+// The most reliable candidate is daybook's OWN directory. Both are installed to
+// ~/.local/bin by their own installers, and a service knows its own executable
+// path however impoverished its PATH is.
+//
+// Returns an absolute path so the spawn does not depend on PATH either.
+func resolveBinary(cfg config.Config) (string, error) {
+	name := cfg.Narrate.Binary
+	explicit := name != ""
+	if !explicit {
+		name = "claude"
+	}
+
+	// An explicit setting that names a path is taken as given: someone who wrote
+	// it down means that binary, and silently using a different one is worse than
+	// failing.
+	if explicit && strings.ContainsRune(name, os.PathSeparator) {
+		if usable(name) {
+			return name, nil
+		}
+		return "", fmt.Errorf("narrate.binary is %q and that is not an executable file", name)
+	}
+
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+
+	if p := findIn(name, binaryDirs()); p != "" {
+		return p, nil
+	}
+
+	where := "PATH"
+	if !explicit {
+		where = "PATH or the usual install locations"
+	}
+	return "", fmt.Errorf("`%s` not found on %s — install Claude Code, or set narrate.binary "+
+		"to its full path (a scheduled run does not inherit your shell's PATH)", name, where)
+}
+
+// findIn returns the first directory holding an executable called name, or "".
+func findIn(name string, dirs []string) string {
+	for _, dir := range dirs {
+		if p := filepath.Join(dir, name); usable(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// binaryDirs is where Claude Code is found when PATH does not name it, best
+// first.
+func binaryDirs() []string {
+	var dirs []string
+	// daybook's own directory. Both installers write to ~/.local/bin, so this is
+	// the one that holds when nothing else does.
+	if exe, err := os.Executable(); err == nil {
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		dirs = append(dirs, filepath.Dir(exe))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".claude", "local"),
+			filepath.Join(home, "bin"),
+		)
+	}
+	return append(dirs, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
+}
+
+// usable reports whether a path is a file this process can execute.
+func usable(p string) bool {
+	fi, err := os.Stat(p)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true // execute bits do not carry the same meaning here
+	}
+	return fi.Mode().Perm()&0o111 != 0
+}
+
 func probeCLI(cfg config.Config) error {
-	bin := cfg.Narrate.Binary
-	if bin == "" {
-		bin = "claude"
-	}
-	if _, err := exec.LookPath(bin); err != nil {
-		return fmt.Errorf("`%s` not found on PATH — install Claude Code, or set narrate.binary", bin)
-	}
-	return nil
+	_, err := resolveBinary(cfg)
+	return err
 }
 
 // Check reports whether narration would work, without spending a request.
@@ -163,9 +251,9 @@ func (c *cliProvider) Complete(ctx context.Context, system, prompt string) (stri
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
-	bin := c.cfg.Narrate.Binary
-	if bin == "" {
-		bin = "claude"
+	bin, err := resolveBinary(c.cfg)
+	if err != nil {
+		return "", err
 	}
 	args := []string{
 		"-p",

@@ -4,6 +4,47 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.4.2
+
+Two live failures found by reading a running daemon's log rather than the code.
+
+### The scheduler stopped running instead of restarting
+
+v0.3.1 taught `serve` to exit when its own binary is replaced. It returned from
+the run loop to do that — and the run loop runs in a **goroutine**, under a
+service wrapper whose `Run()` blocks forever. So returning ended the goroutine
+and left a live process with nothing in it: launchd reported it running,
+`service status` reported it running, `verify` reported it running, and it never
+did another scheduled run.
+
+Observed on a real machine. The log read `the daybook binary changed on disk —
+exiting so it restarts on the new one`, and the process was still there hours
+later with the old executable open. That is strictly worse than the stale code
+the change existed to fix.
+
+The run loop returning now ends the process, which is what hands the restart to
+the service manager. The fix is in the wrapper rather than at that one call
+site, because **any** return from the loop had the same result.
+
+### Scheduled narration could not find Claude Code
+
+A scheduled run does not inherit your shell. launchd hands the daemon
+`/usr/bin:/bin:/usr/sbin:/sbin`, and Claude Code installs to `~/.local/bin` —
+so `exec.LookPath("claude")` succeeded every time daybook was run by hand and
+failed every night at 22:00. Narration was skipped, and screenshots with it,
+because there was no capability list to illustrate. The only trace was one line
+in a log nobody reads.
+
+The CLI is now resolved by looking in daybook's **own directory** first — both
+tools install to the same place, and a service knows its own executable path
+however bare its PATH is — then the usual install locations, and the resolved
+absolute path is what gets spawned. An explicitly configured `narrate.binary`
+that names a path is still taken as given: someone who wrote a path down means
+that binary.
+
+The error names the real cause now. "not found on PATH" sends people to their
+shell profile for a problem that only happens under a scheduler.
+
 ## v0.4.1
 
 ### Windows scheduling, brought in line with humanikd

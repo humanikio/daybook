@@ -17,6 +17,7 @@ package svc
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,7 +36,29 @@ type program struct {
 }
 
 func (p *program) Start(service.Service) error {
-	go func() { _ = p.run() }()
+	// The run loop returning must END THE PROCESS, not just the goroutine.
+	//
+	// This used to be `go func() { _ = p.run() }()`. Under the service wrapper
+	// Start returns immediately and Run() blocks forever, so a run loop that
+	// returned left a live process with nothing running in it — reporting itself
+	// healthy to launchd, to `service status`, and to anyone looking, while never
+	// doing another scheduled run.
+	//
+	// It was reached the moment serve learned to exit when its own binary is
+	// replaced: the daemon logged "exiting so it restarts on the new one" and
+	// then kept running for hours, which is strictly worse than the stale code
+	// that change existed to fix. Observed on a real machine, not reasoned about.
+	//
+	// Exiting hands the restart to the service manager, which is configured for
+	// it: KeepAlive on launchd, Restart on systemd. A non-zero code is kept for a
+	// real error so a supervisor can tell a deliberate exit from a crash.
+	go func() {
+		if err := p.run(); err != nil {
+			log.Printf("daybook serve stopped: %v", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}()
 	return nil
 }
 
