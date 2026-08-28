@@ -145,6 +145,7 @@ daybook scan       # read the window, join against git, write the report
 daybook day        # read today
 daybook day 2026-08-23
 daybook shoot      # photograph where today's work lives, if screenshots are on
+daybook privacy    # what this machine sends, derived from the live config
 daybook verify     # check everything is wired up
 daybook upgrade    # is there a newer release
 ```

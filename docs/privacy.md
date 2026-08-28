@@ -3,6 +3,21 @@
 daybook reads the most sensitive text on your machine: everything you have ever
 typed to Claude Code, and everything it said back.
 
+**To see what your machine actually does, rather than what this page says:**
+
+```sh
+daybook privacy
+```
+
+It reads your live config and reports which routes can send right now, how many
+screenshots are on disk, and whether your reports folder looks like it is inside
+a sync client. Nothing authors that output, so it cannot drift. This page is the
+explanation; that command is the state.
+
+Every route it lists is checked against this page on every build — a new way out
+fails the tests until it is described here. That gate exists because this page
+was wrong for three releases after screenshots shipped.
+
 ## Two rules
 
 **1. Nothing phones home.** No telemetry, no sync, no analytics. daybook has no
@@ -12,6 +27,11 @@ server and reports nothing about you to anyone.
 and writing the report involve no network at all. `watch.fetch: true` is the
 only setting in that path that touches one, and it talks to your own git
 remotes.
+
+`daybook upgrade` asks GitHub whether a newer release exists. Checking for a
+newer release sends nothing about you — it is an unauthenticated request for a
+public release listing, and it only happens when you run that command or the
+installer.
 
 **Two features are exceptions, and both are off by default.** Narration is the
 smaller one. Screenshots are the larger one, and are covered below.

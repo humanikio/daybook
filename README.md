@@ -125,6 +125,7 @@ daybook shoot                photograph where the work lives — off by default
 daybook config edit          change settings with the arrow keys
 daybook upgrade              check whether a newer release exists
 daybook service install      run it nightly, as you, never as root
+daybook privacy              what this machine sends, from the live config
 daybook verify               check everything in one pass
 ```
 

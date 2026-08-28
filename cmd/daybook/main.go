@@ -86,6 +86,8 @@ func main() {
 		err = cmdConfig(args)
 	case "upgrade", "update":
 		err = cmdUpgrade()
+	case "privacy":
+		err = cmdPrivacy(args)
 	case "verify":
 		err = cmdVerify(args)
 	case "version", "--version", "-v":
@@ -146,6 +148,9 @@ Usage:
                                      as YOU, never as root — it needs your git
                                      identity, your transcripts, and the claude
                                      login narration uses.
+  daybook privacy                    What this machine sends, and where
+                                     reports are kept. Derived from the live
+                                     config, not from a document.
   daybook verify                     Check config, sources, repos, parse health,
                                      scheduler and narration in one pass
   daybook upgrade                    Check whether a newer release exists

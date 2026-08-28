@@ -4,6 +4,52 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.4.0
+
+### `daybook privacy`
+
+What **this** machine sends, derived from the live config and the filesystem
+rather than from a document:
+
+```
+  ON   narration      your prompts, the assistant's replies, commit subjects…
+                      → Anthropic, through the claude CLI you are signed in with
+  off  git-fetch      watch.fetch is false
+  2 of 5 routes can send from this machine right now.
+```
+
+Nothing authors that output, so it cannot go stale. It also counts the
+screenshots on disk, says when `start_servers` or `on_schedule` widen what
+happens unattended, reports the permissions on your reports folder, and warns
+when that folder looks like it is inside iCloud, Dropbox, Google Drive or
+OneDrive — daybook syncs nothing, but a sync client will happily upload your
+prompt history without anyone deciding to.
+
+Run it before a screen share, or when handing daybook to somebody who asks what
+it does with their work.
+
+### A build gate on the privacy page
+
+Both privacy pages said narration was the only thing that left this machine, and
+went on saying it for three releases after screenshots shipped. Every other
+claim in this repo is checked by something — the changelog gate, the six-platform
+build, the example-config test, narration's own verification pass. The one class
+of claim where being wrong matters most was the only one running on trust.
+
+`internal/egress` now declares every way out, and two tests hold it to account:
+
+- **Complete.** No file may open a network connection or spawn a process without
+  being classified as a route out or as local. A new way out fails the build
+  until somebody says which it is. Spawning a process counts, because whether a
+  subprocess reaches the network is not decidable from our source — `git fetch`
+  does and `git status` does not.
+- **Documented.** Every route must be described in `docs/privacy.md`.
+
+Neither test can judge whether the prose is any good. They catch a route being
+added while nobody writes anything, which is what actually happened.
+
+`docs/privacy.md` also now covers the upgrade check, which was undocumented.
+
 ## v0.3.6
 
 ### The installer can read the certificate it downloads
