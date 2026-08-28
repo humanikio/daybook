@@ -4,6 +4,72 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.4.1
+
+### Windows scheduling, brought in line with humanikd
+
+The logon task was registered with `schtasks` in its **flag form**, which can
+express the trigger, the action and the run level and nothing else. Every other
+setting silently took Task Scheduler's schema default, and those defaults are
+written for a desktop app you launch occasionally:
+
+| | default | what it does to a nightly run |
+|---|---|---|
+| `DisallowStartIfOnBatteries` | true | does not start at all if you log in on battery |
+| `StopIfGoingOnBatteries` | true | killed the moment the charger comes out |
+| `ExecutionTimeLimit` | PT72H | killed after three days |
+| `RestartOnFailure` count | 0 | none of the above ever recovers |
+
+On a laptop that is four separate ways for the report to stop appearing, while
+`schtasks /query` goes on reporting the task as registered and fine. None of
+those values were ever chosen — they were inherited by using the flag form.
+
+The task is now defined in XML, as UTF-16 with a BOM, which is the only way to
+set them without the COM API. Note `PT0S`: omitting `ExecutionTimeLimit` does not
+mean unlimited, it means 72 hours.
+
+Also from humanikd's Windows path, all of it worked out against real machines:
+
+- **Registration tries a subfolder before the root.** Some machines gate the Task
+  Scheduler root folder by policy, and a non-elevated create returns a bare
+  "Access is denied" even though the task needs no elevation to run. If both are
+  refused, the error explains that one elevated run is needed and that the task
+  still runs unprivileged — rather than printing a message that contradicts a
+  README which never asks for admin.
+- **Every verb tries both locations**, not just install: a machine may carry the
+  task at either depending on which build registered it.
+- **"No such task" is distinguished from a real failure**, so uninstall is
+  idempotent and status does not report "not installed" for a query that broke.
+- **The principal is named explicitly**, so an unknown user is a hard stop rather
+  than a task registered against the wrong identity.
+
+### The Windows installer works on PowerShell 5.1
+
+5.1 is the default shell on Windows 10 and 11. Two omissions, both learned from
+humanikd shipping them:
+
+- **`-UseBasicParsing`** — without it `Invoke-WebRequest` uses the Internet
+  Explorer parsing engine and fails outright where IE first-launch configuration
+  has never run. That is the normal state of a fresh install and of most Windows
+  Server images, so it broke for exactly the people installing for the first time.
+- **`$ProgressPreference`** — the progress bar makes a large download roughly an
+  order of magnitude slower. Restored afterwards, since the script is often run
+  into a session the user keeps using.
+
+The checksum comparison reads from a file rather than a response body, and its
+abort sits outside any `try` — on 5.1 an octet-stream body arrives as `[byte[]]`
+and splitting it yields decimal byte values instead of a hash, and under
+`$ErrorActionPreference='Stop'` a throw inside a `try` is caught by that block's
+own catch. humanikd shipped both bugs; daybook now has tests and comments for
+them.
+
+### Not carried over
+
+humanikd's `removeLegacyService`. It registered an SCM service in v0.1.9 and
+earlier and has to clear it. daybook has used a logon task since v0.1.0, so
+there is no dead service to remove, and porting it would have been a comment
+describing somebody else's history.
+
 ## v0.4.0
 
 ### `daybook privacy`

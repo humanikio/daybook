@@ -11,6 +11,8 @@ curl -fsSL https://github.com/humanikio/daybook/releases/latest/download/install
 daybook init && daybook backfill 7
 ```
 
+Windows: `irm https://github.com/humanikio/daybook/releases/latest/download/install.ps1 | iex`
+
 ---
 
 ## The report is written for someone else to read

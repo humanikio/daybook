@@ -2,6 +2,27 @@
 
 ## Install
 
+**Windows** uses PowerShell — `curl -fsSL … | sh` cannot work there, because
+PowerShell aliases `curl` to `Invoke-WebRequest`, which rejects `-fsSL` before
+fetching anything:
+
+```powershell
+irm https://github.com/humanikio/daybook/releases/latest/download/install.ps1 | iex
+```
+
+Per-user, no admin. `daybook service install` registers a **logon task**, not a
+Windows service — a service runs as LocalSystem, which cannot reach your HOME
+(where the transcripts are), your git identity, or your Claude Code credentials.
+It would install, start, and write an empty report forever, which is the worst
+kind of failure because it looks like success. The logon task runs as you.
+
+One machine in some corporate setups refuses to register a task at the Task
+Scheduler root without elevation. daybook tries a subfolder first, which usually
+succeeds unelevated; if both are refused it tells you to run the install once
+from an elevated prompt, and says plainly that the task it creates still runs
+unprivileged.
+
+
 ```sh
 go install github.com/humanikio/daybook/cmd/daybook@latest
 ```

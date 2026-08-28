@@ -36,7 +36,26 @@ $asset = "daybook-windows-$arch.exe"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
 
 Write-Host "Downloading daybook (windows/$arch) ..."
-Invoke-WebRequest -Uri "$base/$asset" -OutFile $tmp
+
+# Two things Windows PowerShell 5.1 — the default shell on Windows 10 and 11 —
+# needs, learned the hard way in humanikd's installer:
+#
+#   -UseBasicParsing: without it Invoke-WebRequest uses the Internet Explorer
+#   parsing engine, and FAILS OUTRIGHT on a machine where IE first-launch
+#   configuration has never run. That is the normal state of a fresh install and
+#   of most Windows Server images, so the installer breaks for exactly the people
+#   installing it for the first time.
+#
+#   $ProgressPreference: the progress bar makes a large download roughly an order
+#   of magnitude slower on 5.1. Restored afterwards rather than left off, because
+#   this script is often dot-sourced into a session the user keeps using.
+$prevProgress = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
+try {
+    Invoke-WebRequest -Uri "$base/$asset" -OutFile $tmp -UseBasicParsing
+} finally {
+    $ProgressPreference = $prevProgress
+}
 
 if ($env:DAYBOOK_SKIP_VERIFY -eq "1") {
     Write-Host "  ! skipping checksum verification (DAYBOOK_SKIP_VERIFY=1)"
@@ -45,12 +64,22 @@ if ($env:DAYBOOK_SKIP_VERIFY -eq "1") {
     # than proceeding quietly.
     $sums = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
     try {
-        Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile $sums
+        Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile $sums -UseBasicParsing
     } catch {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         throw "Could not fetch checksums.txt, so the download cannot be verified."
     }
 
+    # Read from a FILE, not from a response body. On 5.1 an octet-stream response
+    # comes back as [byte[]], and splitting that stringifies it to decimal byte
+    # values — so the "hash" parsed out is "52" and never matches, failing every
+    # good download. -OutFile sidesteps it entirely.
+    #
+    # The comparison and its abort live OUTSIDE any try block on purpose: under
+    # $ErrorActionPreference='Stop' a throw inside one is caught by that block's
+    # catch, and humanikd's installer spent a release swallowing its own mismatch
+    # abort into a catch written for a missing checksum.
+    #
     # sha256sum writes "<hash>  <name>". Match the name at the end of the line so
     # a name that merely contains this one cannot match.
     # Built with single quotes and concatenation on purpose. Interpolating the
