@@ -4,6 +4,55 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.4.3
+
+### A day's whole capability list was being discarded for the right answer
+
+git writes a moved file in `--numstat` with the common prefix and suffix
+factored out:
+
+```
+src/{app/(workspace)/.../components => components/canvas}/ZoomControls.tsx
+```
+
+That is readable, and it is not a path. daybook stored it verbatim, so the
+report told teammates to open files that do not exist.
+
+The worse consequence was in narration. The model resolved that notation to the
+real path — correctly — and the verification gate rejected the entire
+what-shipped pass, because the right answer was not a literal substring of a
+fact that was itself malformed. The report lost its capability section
+completely: the part a teammate actually reads, gone, because the model was
+right and the fact it was checked against was wrong.
+
+Rename notation is now resolved to the path that exists. Both forms git emits
+are handled, and anything unrecognised is passed through unchanged — a wrong
+path is worse than an ugly one. Next.js route groups and dynamic segments are
+in the tests, because they are full of brackets and must survive a fix aimed at
+braces.
+
+### One bad entry no longer takes the good ones with it
+
+Verification runs **per entry** now. The offending entry is dropped and the rest
+are kept. The gate stays strict about what reaches the page; it should not be
+strict about how much it takes down with it.
+
+It also checks the prose, not only the structured fields. A sha invented
+mid-sentence is exactly where a plausible fabrication would hide, and it was
+unchecked.
+
+### Every rejection says why
+
+Four paths could reject a narration and three of them recorded nothing, so
+`1 rejected by the verification gate` might mean a fabricated sha, a model that
+answered in prose, or an empty summary — three problems with three different
+responses. Each now names its reason.
+
+The wording changed too. "invented" was wrong and cost real time: it sent
+somebody hunting a hallucination that was not there. A rejection now says the
+entry **names something that is not in this day's commits**, which is what the
+gate actually checks.
+
 ## v0.4.2
 
 Two live failures found by reading a running daemon's log rather than the code.

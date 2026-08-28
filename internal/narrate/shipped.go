@@ -54,37 +54,59 @@ RULES
 - Order so the most consequential entry is first, internal work last.
 - No praise, no grading, no "successfully".`
 
-// Shipped groups a day's commits into capabilities.
-func Shipped(ctx context.Context, p Provider, day *model.Day) error {
+// Shipped groups a day's commits into capabilities, and returns the tokens of
+// any entry the verification gate refused.
+func Shipped(ctx context.Context, p Provider, day *model.Day) ([]string, error) {
 	facts := shippedFacts(*day)
 	if strings.TrimSpace(facts) == "" {
-		return nil
+		return nil, nil
 	}
 	out, err := p.Complete(ctx, shippedSystem, facts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	raw := extractArray(out)
 	if raw == "" {
-		return fmt.Errorf("no list in the response")
-	}
-	if bad := Verify(raw, facts); bad != "" {
-		return fmt.Errorf("invented %q", bad)
+		return nil, fmt.Errorf("no list in the response")
 	}
 	var items []model.ShippedItem
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
-		return err
+		return nil, err
 	}
 
-	// Drop entries with nothing in them rather than rendering empty bullets.
+	// Verified PER ENTRY, not per pass.
+	//
+	// One unmatched token used to discard the entire capability list — the
+	// section a teammate actually reads. It happened: git writes a moved file as
+	// `src/{a => b}/File.tsx`, the model resolved that to the real path, and the
+	// gate threw away twenty good entries because the one right answer was not a
+	// literal substring of a fact that was itself malformed.
+	//
+	// The gate stays strict about what reaches the page. It should not be strict
+	// about how much it takes down with it.
 	var kept []model.ShippedItem
+	var dropped []string
 	for _, it := range items {
-		if strings.TrimSpace(it.What) != "" {
-			kept = append(kept, it)
+		// Drop entries with nothing in them rather than rendering empty bullets.
+		if strings.TrimSpace(it.What) == "" {
+			continue
 		}
+		if bad := Verify(itemTokens(it), facts); bad != "" {
+			dropped = append(dropped, bad)
+			continue
+		}
+		kept = append(kept, it)
 	}
 	day.Shipped = kept
-	return nil
+	return dropped, nil
+}
+
+// itemTokens is everything in an entry a reader could act on: the paths, the
+// commits and the branch. The prose is included too, because a sha named in a
+// sentence is as checkable as one in a list.
+func itemTokens(it model.ShippedItem) string {
+	return strings.Join(append(append([]string{it.What, it.How, it.Branch},
+		it.Where...), it.Commits...), "\n")
 }
 
 func shippedFacts(d model.Day) string {

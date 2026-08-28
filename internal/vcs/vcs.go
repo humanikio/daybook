@@ -242,7 +242,7 @@ func Log(root string, since, until time.Time, authors []string) ([]model.Commit,
 		if n, err := strconv.Atoi(f[1]); err == nil {
 			cur.Deleted += n
 		}
-		cur.Files = append(cur.Files, f[2])
+		cur.Files = append(cur.Files, renamedTo(f[2]))
 	}
 	flush()
 	return commits, nil
@@ -358,4 +358,45 @@ func run(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return string(out), nil
+}
+
+// renamedTo turns git's compact rename notation into the path that exists now.
+//
+// With rename detection on, numstat writes a moved file as one line with the
+// common prefix and suffix factored out:
+//
+//	src/{app/components => components/canvas}/ZoomControls.tsx
+//
+// which is readable and is not a path. It reached the report, where a teammate
+// was told to open a file that does not exist. Worse, it reached the narration
+// facts: the model resolved it to the real path — correctly — and the
+// verification gate rejected the entire pass because that string appeared
+// nowhere in its input. A day's whole capability list was discarded because the
+// model was right and the fact it was checked against was wrong.
+//
+// The arrow is also written without braces when the whole path changed:
+//
+//	old/path.ts => new/path.ts
+//
+// Both forms yield the new path, which is the one somebody can open.
+func renamedTo(p string) string {
+	arrow := strings.Index(p, " => ")
+	if arrow < 0 {
+		return p
+	}
+	open := strings.IndexByte(p, '{')
+	if open < 0 || open > arrow {
+		return strings.TrimSpace(p[arrow+4:]) // whole-path rename
+	}
+	end := strings.IndexByte(p[arrow:], '}')
+	if end < 0 {
+		return p // not a shape we recognise; the raw line beats a guess
+	}
+	end += arrow
+
+	// prefix + the half after the arrow + suffix. Either half can be empty
+	// ("src/{ => nested}/f.ts"), which collapses to a doubled separator.
+	joined := p[:open] + strings.TrimSpace(p[arrow+4:end]) + p[end+1:]
+	joined = strings.ReplaceAll(joined, "//", "/")
+	return strings.TrimPrefix(joined, "/")
 }

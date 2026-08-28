@@ -118,26 +118,34 @@ func Run(ctx context.Context, cfg config.Config, day *model.Day, carry map[strin
 				res.Failed++
 				return
 			}
+			// Every rejection says why. Three of these paths used to increment the
+			// counter and record nothing, so "1 rejected by the verification gate"
+			// could mean a fabricated sha, a model that answered in prose, or an
+			// empty summary — and those need entirely different responses.
+			title := day.Streams[i].Title
+			reject := func(why string) {
+				res.Rejected++
+				res.Fabrications = append(res.Fabrications, title+": "+why)
+			}
+
 			raw := extractJSON(out)
 			if raw == "" {
-				res.Rejected++
+				reject("the response contained no JSON object")
 				return
 			}
 			// The gate runs on the RAW model output, before parsing, so a
 			// fabricated identifier is caught wherever in the response it landed.
 			if bad := Verify(raw, facts); bad != "" {
-				res.Rejected++
-				res.Fabrications = append(res.Fabrications,
-					fmt.Sprintf("%s: claimed %q", day.Streams[i].Title, bad))
+				reject(fmt.Sprintf("named %q, which is not in this stream's facts", bad))
 				return
 			}
 			var n model.Narration
 			if err := json.Unmarshal([]byte(raw), &n); err != nil {
-				res.Rejected++
+				reject("the JSON did not match the expected shape: " + err.Error())
 				return
 			}
 			if strings.TrimSpace(n.Happened) == "" {
-				res.Rejected++
+				reject("the summary came back empty")
 				return
 			}
 			day.Streams[i].Narration = &n
@@ -152,8 +160,17 @@ func Run(ctx context.Context, cfg config.Config, day *model.Day, carry map[strin
 
 	// What shipped, read as capabilities. This is the section a teammate reads,
 	// so it runs even when the day-level synthesis fails.
-	if err := Shipped(ctx, p, day); err != nil {
+	dropped, err := Shipped(ctx, p, day)
+	if err != nil {
 		res.Fabrications = append(res.Fabrications, "what-shipped: "+err.Error())
+	}
+	for _, bad := range dropped {
+		// Named, not counted. Whether the model invented something or the gate is
+		// wrong about a real token calls for opposite fixes, and only the token
+		// itself tells you which.
+		res.Rejected++
+		res.Fabrications = append(res.Fabrications,
+			fmt.Sprintf("what-shipped: dropped one entry naming %q, which is not in this day's commits", bad))
 	}
 
 	// Synthesis runs over the per-stream summaries only — never the transcripts.
