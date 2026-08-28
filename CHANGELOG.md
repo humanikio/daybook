@@ -4,6 +4,42 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.4.4
+
+### `service install` proves the scheduler is running
+
+It reported the action it attempted, not the state it reached:
+
+```go
+if err := svc.Control(cfg, action); err != nil { return err }
+fmt.Println(action + "ed")
+```
+
+Nothing checked whether anything was running. Two failures came out of that on
+one machine: `install` printed **installed** with no process at all, and
+`restart` printed **restarted** over a live process whose run loop had never
+started — launchd reporting it up, exit code 0, and it would never have produced
+another report.
+
+Three changes:
+
+- **`install` starts it.** `RunAtLoad` is not a guarantee; launchd can register a
+  job and decline to start it. Asking to install the scheduler means asking for
+  it to run.
+- **A pid is not proof.** `serveLoop` records `serveStarted` the moment it
+  begins, so install, start and restart now wait for a stamp **newer than the
+  command** — evidence the loop actually ran, which is the thing being claimed.
+  Every process-existence check called that broken daemon healthy.
+- **It says what is true when it cannot confirm**, and names the next step,
+  rather than printing success. It does not exit non-zero: launchd may bring the
+  job up a moment later, and failing a scripted install over that would be wrong.
+  `daybook verify` stays the authority.
+
+### `service stop` said "stoped"
+
+`action + "ed"`. Every other verb survives the concatenation, which is why it
+went unnoticed.
+
 ## v0.4.3
 
 ### A day's whole capability list was being discarded for the right answer

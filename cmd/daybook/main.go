@@ -578,6 +578,68 @@ func schedulerNeedsRestart(cfg config.Config) string {
 	return ""
 }
 
+// pastTense reports what was done, in words.
+func pastTense(action string) string {
+	if action == "stop" {
+		return "stopped"
+	}
+	return action + "ed"
+}
+
+// reportServeStarted waits for the scheduler to prove its run loop is alive.
+//
+// A pid proves nothing. On 28 August a launchd-managed process with exit code 0
+// sat there for hours with no loop running: `service restart` said "restarted",
+// `service status` said running, and it would never have produced another
+// report. Every check based on process existence called it healthy.
+//
+// serveLoop records serveStarted the moment it begins, so a stamp newer than the
+// command is evidence the loop actually ran — which is the thing being claimed.
+//
+// It does not fail the command. launchd may still bring the job up a moment
+// later, and exiting non-zero over that would break scripted installs that are
+// in fact fine. It says what is true and names the next step; `daybook verify`
+// stays the authority.
+func reportServeStarted(cfg config.Config, began time.Time) {
+	const wait = 15 * time.Second
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		if t, ok := serveStartedAt(cfg); ok && !t.Before(began.Add(-time.Second)) {
+			fmt.Printf("  running · its loop started %s\n", t.Format("15:04:05"))
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	installed, running, _ := svc.Status(cfg)
+	switch {
+	case running:
+		// Registered and up, but it has not recorded a start. Worth saying
+		// plainly rather than reporting success: this is exactly the shape of the
+		// process that had no run loop.
+		fmt.Fprintf(os.Stderr, "  ! it is running but has not reported its loop starting after %s\n", wait)
+		fmt.Fprintln(os.Stderr, "    daybook verify, and `daybook service restart` if it stays quiet")
+	case installed:
+		fmt.Fprintf(os.Stderr, "  ! registered but not running after %s\n", wait)
+		fmt.Fprintln(os.Stderr, "    daybook service start")
+	default:
+		fmt.Fprintf(os.Stderr, "  ! it is not registered after %s\n", wait)
+		fmt.Fprintln(os.Stderr, "    daybook service install")
+	}
+}
+
+// serveStartedAt is when the scheduler last recorded its run loop starting.
+func serveStartedAt(cfg config.Config) (time.Time, bool) {
+	st := loadLastRun(cfg)
+	if st.ServeStarted == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, st.ServeStarted)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
 func svcStatus(cfg config.Config) (bool, bool, error) { return svc.Status(cfg) }
 
 func cmdService(args []string) error {
@@ -618,15 +680,35 @@ func cmdService(args []string) error {
 
 	switch action {
 	case "install", "uninstall", "start", "stop", "restart":
+		// The moment the action began. Anything the scheduler records after this
+		// came from a process this command caused.
+		began := time.Now()
+
 		if err := svc.Control(cfg, action); err != nil {
 			return err
 		}
-		fmt.Println(action + "ed")
+		// Not action+"ed": that yields "stoped". Every other verb happens to
+		// survive the concatenation, which is why it went unnoticed.
+		fmt.Println(pastTense(action))
 		if action == "install" {
 			if n := svc.PostInstallNote(); n != "" {
 				fmt.Println("  " + n)
 			}
+			// RunAtLoad is not a guarantee. launchd can register a job and decline
+			// to start it — session state, throttling after a recent unload — and
+			// `service install` reporting success over a scheduler that is not
+			// running is the whole reason this block exists. Asking to install it
+			// means asking for it to run.
+			if err := svc.Control(cfg, "start"); err != nil {
+				fmt.Fprintf(os.Stderr, "  ! registered, but could not start it: %v\n", err)
+				fmt.Fprintln(os.Stderr, "    daybook service start")
+				return nil
+			}
 		}
+		if action == "uninstall" || action == "stop" {
+			return nil
+		}
+		reportServeStarted(cfg, began)
 		return nil
 	default:
 		return fmt.Errorf("unknown action %q — install|uninstall|start|stop|restart|status", action)
