@@ -134,8 +134,8 @@ The rows it offers:
 | **Formats** | markdown only, or markdown and HTML every day |
 | Narration | [prose summaries](narration.md) |
 | Window | how far back a run looks |
-| Keep prompts | store prompt text, or only its shape |
 | **Screenshots** | [everything on this page](screenshots.md) |
+| Archive sessions | keep a byte-for-byte copy of each day's transcripts |
 
 Screenshots asks four things: whether to enable them, how many pictures at most,
 whether it may start an app that is not running, whether to photograph on the

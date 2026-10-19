@@ -19,6 +19,35 @@ ever authoritative.
 `raw/` is namespaced by machine so two machines writing into one synced
 directory never collide on the same file.
 
+## Sessions
+
+```
+<output.root>/
+  sessions/2026-08-24.<machine>.json             every session active that day
+  transcripts/<project>/<sessionId>.jsonl        byte-for-byte archive
+  transcripts/<project>/<sessionId>/…            subagents, tool results
+```
+
+`sessions/` is a view over the raw file, rebuilt each time the day is written,
+so a purpose improved by narration reaches it in the same write. Its own
+`schema: 1`, separate from the raw file's. Types are `model.SessionDay` and
+`model.Session`.
+
+Per session: `sessionId`, `purpose` and `purposeSource` (`narration` — passed
+the verification gate — or `title`, Claude Code's own), `state`, `live`,
+`agent`, `project`, `cwd`, `branch`, `first`, `last`, `commits` as `repo@sha`,
+`resume`, and `transcript` with `source` (Claude Code's path), `archive` and
+`dir` (relative to `output.root`, empty when archiving is off).
+
+`live` is measured against the end of the window, not the clock, so a rebuilt
+day says what it said the night it was written. `active` within an hour of the
+window closing, `idle` within `stale_after`, `dormant` beyond it.
+
+`transcripts/` is the one thing under `output.root` that is not regenerable.
+A file is recopied when its bytes differ from the source and left alone
+otherwise; copies are written to a temporary file and renamed into place, so a
+reader never sees half of one. Nothing in it is ever deleted.
+
 ## Schema
 
 `schema: 1`. Types live in `internal/model` and nothing else defines a field.

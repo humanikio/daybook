@@ -111,6 +111,11 @@ type Stream struct {
 	CWD     string `json:"cwd,omitempty"`
 	Branch  string `json:"branch,omitempty"`
 
+	// Transcript is the absolute path of the session's .jsonl. Raw files written
+	// before it existed lack it, so readers must be able to find the file by
+	// id instead.
+	Transcript string `json:"transcript,omitempty"`
+
 	First time.Time `json:"first"`
 	Last  time.Time `json:"last"`
 
@@ -472,4 +477,78 @@ func Classify(text string) FailKind {
 	// be identified is reported as friction, because claiming the product broke
 	// on evidence this thin is the error being fixed here.
 	return FailCommand
+}
+
+// SessionSchema is the version of the sessions/*.json documents. Separate from
+// Schema because the two files are read by different consumers and change for
+// different reasons.
+const SessionSchema = 1
+
+// Live is how recently a session was heard from when its day closed.
+//
+// A second axis beside State, not a fifth state. State says how far the WORK
+// got and is shared with the report, so the two can never disagree; Live says
+// whether the CONVERSATION is worth resuming. Read together they name the case
+// State alone cannot: `local` and `idle` is work committed, never pushed, and
+// left.
+type Live string
+
+const (
+	LiveActive  Live = "active"  // heard from in the last hour of the window
+	LiveIdle    Live = "idle"    // quiet longer than that, inside stale_after
+	LiveDormant Live = "dormant" // quiet beyond stale_after
+)
+
+// SessionDay is every Claude Code session active in one day's window, written
+// for another system to pick up: what each was for, how far it got, how to
+// resume it, and where its full transcript is kept.
+type SessionDay struct {
+	Schema      int       `json:"schema"`
+	Date        string    `json:"date"`
+	Machine     string    `json:"machine"`
+	Generated   time.Time `json:"generated"`
+	WindowStart time.Time `json:"windowStart"`
+	WindowEnd   time.Time `json:"windowEnd"`
+	Sessions    []Session `json:"sessions"`
+}
+
+// Session is one entry in a SessionDay.
+type Session struct {
+	SessionID string `json:"sessionId"`
+	// Purpose is what the session was for, in a sentence. PurposeSource says
+	// where it came from — "narration" (checked by the verification gate) or
+	// "title" (Claude Code's own title, or the first prompt) — because the two
+	// are not equally trustworthy and a reader should know which they have.
+	Purpose       string `json:"purpose"`
+	PurposeSource string `json:"purposeSource"`
+
+	State State `json:"state"`
+	Live  Live  `json:"live"`
+	Agent bool  `json:"agent"`
+
+	Project string    `json:"project"`
+	CWD     string    `json:"cwd,omitempty"`
+	Branch  string    `json:"branch,omitempty"`
+	First   time.Time `json:"first"`
+	Last    time.Time `json:"last"`
+	// Commits are repo@sha, attributed the same way the report attributes them.
+	Commits []string `json:"commits,omitempty"`
+
+	// Resume restores the session. It changes directory first because
+	// `claude --resume` only finds a session from the directory it ran in.
+	Resume string `json:"resume"`
+
+	Transcript SessionFiles `json:"transcript"`
+}
+
+// SessionFiles says where a session's transcript lives.
+type SessionFiles struct {
+	// Source is Claude Code's own file. Claude Code deletes transcripts after
+	// cleanupPeriodDays (30 by default), so this path stops resolving.
+	Source string `json:"source,omitempty"`
+	// Archive is daybook's byte-for-byte copy, relative to the output root, and
+	// empty when archiving is off. Dir holds whatever Claude Code keeps beside
+	// the transcript — subagents, tool results — when there is any.
+	Archive string `json:"archive,omitempty"`
+	Dir     string `json:"dir,omitempty"`
 }

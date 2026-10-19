@@ -50,9 +50,7 @@ your own API key — so it is covered by whatever agreement you already have.
 daybook holds no credential and adds no relationship of its own.
 
 If that trade is not one you want, `narrate.enabled: false` is the default and
-the deterministic report is complete without it. `privacy.keep_raw_prompts:
-false` narrows it further: counts, commits and timings still work, and no words
-are stored or sent.
+the deterministic report is complete without it.
 
 **Screenshots are the larger exception, and off by default.** See
 [screenshots](screenshots.md) for the settings; what matters here is what it
@@ -92,6 +90,10 @@ before the first byte reaches disk.
 Transcript files are opened read-only and never modified. Nothing is written
 anywhere except under `output.root`.
 
+The second row applies to the whole session as well as the `.jsonl`: with the
+archive on, the directory Claude Code keeps beside each transcript (subagents,
+tool results) is read so it can be copied.
+
 ## What is written
 
 daybook uses **two** directories, and only one of them holds your words.
@@ -103,6 +105,8 @@ daybook uses **two** directories, and only one of them holds your words.
 <output.root>/                     default ~/Desktop/daybook
   outputs/YYYY-MM-DD.md            report — prompt text, file paths, commits
   raw/YYYY-MM-DD.<machine>.json    the same, structured
+  sessions/YYYY-MM-DD.<machine>.json  the day's sessions — purpose, state, paths
+  transcripts/<project>/<id>.jsonl    the archive — whole transcripts, UNREDACTED
   state/open.json                  the ledger
   state/pins.json                  commit → stream
   state/last-run.json              timestamps only
@@ -124,28 +128,65 @@ version-controlled, use a separate private repository.
 
 ## Redaction
 
-Applied to every prompt and every assistant message before writing:
+Applied to every prompt, every assistant message and every kept error before
+writing — and so before narration sends any of it. Built in, and always on:
 
-| pattern | catches |
-|---|---|
-| `AKIA[0-9A-Z]{16}` | AWS access key IDs |
-| `sk-[A-Za-z0-9_-]{20,}` | bearer-style API keys |
-| `gh[pousr]_[A-Za-z0-9]{20,}` | GitHub tokens |
-| `-----BEGIN … PRIVATE KEY-----` | private keys |
+| name | catches | becomes |
+|---|---|---|
+| `private-key` | a whole `BEGIN … PRIVATE KEY` block, through `END` | `[redacted]` |
+| `aws-access-key` | `AKIA…` / `ASIA…` key ids | `[redacted]` |
+| `aws-secret-key` | the value after `aws_secret_access_key =` | `aws_secret_access_key = [redacted]` |
+| `api-key` | `sk-…` — Anthropic, OpenAI | `[redacted]` |
+| `stripe-key` · `stripe-webhook` | `sk_live_`, `rk_test_`, `pk_live_` · `whsec_` | `[redacted]` |
+| `github-token` · `github-pat` | `ghp_` and kin · `github_pat_` | `[redacted]` |
+| `slack-token` | `xoxb-`, `xoxp-` and kin | `[redacted]` |
+| `jwt` | `eyJ….eyJ….sig` | `[redacted]` |
+| `url-password` | the password in `scheme://user:pass@host` | `postgres://admin:[redacted]@db` |
+| `bearer` | the token after `Bearer` | `Bearer [redacted]` |
+| `env-secret` | an UPPER_CASE name containing SECRET, TOKEN, PASSWORD or API_KEY, then `=` or `:` and 8+ characters | `DB_PASSWORD=[redacted]` |
 
-Add your own under `privacy.redact`. Matches become `[redacted]`.
+Where a context word is matched, only the secret is replaced, so the report
+still says what was connected to. Every pattern is tested against a look-alike
+it must leave alone — `MAX_TOKENS=4096`, `tokens = tokenizer.encode(text)`.
+
+`privacy.redact` **adds** patterns; it does not replace these. Name a group
+`secret` to replace only that part: `(?P<secret>…)`. `daybook privacy` lists
+everything that runs.
 
 **This is a safety net, not a guarantee.** It catches known key shapes; it
-cannot catch a password typed as prose. If that matters more to you than
-fidelity:
+cannot catch a password typed as prose. The words themselves are always kept:
+reports are written from what was said, and the archive keeps all of it anyway.
 
-```yaml
-privacy:
-  keep_raw_prompts: false
+## The transcript archive
+
+**On by default, and not redacted.** Every session active in a day's window is
+copied byte for byte into `transcripts/`, with the directory Claude Code keeps
+beside it, and copied again whenever the source's bytes differ. That is the
+whole conversation: every prompt, every reply, and every tool result — the
+contents of files the agent read and the output of commands it ran, `.env`
+files and credentials included if it read them.
+
+It exists so the history outlives Claude Code, which deletes transcripts after
+`cleanupPeriodDays` (30 unless changed), and so another system can read it from
+one known place. Redaction is not applied because a redacted copy is no longer
+the transcript, and pattern redaction over arbitrary tool output would miss
+more than it caught.
+
+What follows from that:
+
+- Files are `0600`, directories `0700`, as with everything else here.
+- **A synced `output.root` uploads the archive.** `daybook privacy` warns when
+  the folder looks like it is inside a sync client; with the archive on, that
+  warning covers every transcript, not only the report.
+- It is never pruned. A session whose source Claude Code has deleted keeps its
+  last copy. Removing files from `transcripts/` is yours to do.
+- With the archive off, the index is still written, pointing at the source.
+
+To stop new copies:
+
+```sh
+daybook config set sessions.archive false
 ```
-
-Timestamps, counts, tools, files, repos and commits are still recorded — you
-keep the whole shape of the day, and none of the words.
 
 ## What is not collected
 

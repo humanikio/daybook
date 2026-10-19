@@ -48,3 +48,21 @@ func TestNoReposWritesNoList(t *testing.T) {
 		t.Error("a config with no list stopped allowing every repo")
 	}
 }
+
+// On by default, and an explicit no has to survive being written back out —
+// a false that reads back as the default true would be the worst kind of
+// round-trip bug, because it would look like it worked.
+func TestSessionsArchiveSurvivesRender(t *testing.T) {
+	if !Default().Sessions.Archive {
+		t.Error("sessions.archive should default to on")
+	}
+	c := Default()
+	c.Sessions.Archive = false
+	got := Default()
+	if err := yaml.Unmarshal(Render(c), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Sessions.Archive {
+		t.Error("sessions.archive: false did not survive the write")
+	}
+}

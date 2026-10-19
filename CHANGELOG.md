@@ -4,6 +4,82 @@ Notes for a tag live under a `## vX.Y.Z` heading here — the release workflow
 reads this file to build the release body. A tag with no matching section is
 refused before anything is built, as is a tag over an unchanged tree.
 
+## v0.5.0
+
+### Every day's sessions, indexed and kept
+
+`sessions/<date>.<machine>.json` lists each Claude Code session active in the
+day's window: its session id, what it was for, its state, the directory it ran
+in and the command that resumes it. Written for another system to read, and
+rebuilt every time the day is, so it cannot disagree with the report.
+
+`claude --resume <id>` only finds a session from the directory it was started
+in, so the command changes directory first. An id alone does not restore
+anything.
+
+**State is the report's own.** The same four values from the same function —
+a second rule for sessions would be a second answer to one question. Beside it
+is `live`: `active`, `idle` or `dormant`, by how long before the window closed
+the session was last heard from. It answers a different question — is this
+conversation worth picking up — and read together the two name the case
+neither does alone: `local` and `idle` is work committed, never pushed, and
+left.
+
+### Transcripts are archived, byte for byte
+
+Claude Code deletes transcripts after 30 days by default. An index pointing at
+a deleted file is worth nothing, so each session in the index is copied into
+`transcripts/` with everything Claude Code keeps beside it, and copied again
+whenever its bytes differ. A session whose source has gone keeps its last copy.
+
+**On by default, and not redacted.** It is the whole conversation, tool output
+included. `daybook privacy` says so, the privacy page says what follows from
+it, and `sessions.archive: false` — in `config set` and `config edit` — turns
+it off.
+
+### Redaction caught four things, and one of them only half
+
+The private-key pattern matched the `BEGIN` line and nothing after it. The
+header was replaced and **the key itself was written into the report**, and
+sent onward by narration.
+
+It now removes the whole block, through `END` — or to the end of the text,
+since a clipped prompt can stop mid-key. Added alongside it: AWS secret keys,
+Stripe keys and webhook secrets, fine-grained GitHub tokens, Slack tokens,
+JWTs, passwords in URLs, bearer tokens, and environment lines whose name says
+SECRET, TOKEN, PASSWORD or API_KEY. Where a context word is matched only the
+secret is replaced: `postgres://admin:[redacted]@db` still says what was
+connected to. Each pattern is tested against a look-alike it must leave alone.
+
+### Redaction defaults now reach existing installs
+
+`init` wrote the default patterns into `config.yaml`, and the file's list then
+**replaced** the built-in one. So no release could improve redaction for
+anybody already installed — which is how the private-key fix above would have
+reached nobody.
+
+The built-in patterns now always run, and `privacy.redact` adds to them. The
+four patterns older versions wrote are recognised and dropped on load, and
+disappear from the file the next time daybook writes it. Patterns of your own
+are kept. `daybook privacy` lists everything that runs.
+
+### `privacy.keep_raw_prompts` is gone
+
+It stored the shape of a day without its words. With the archive keeping every
+word of every session, a report that withholds them protects nothing and is
+simply a worse report: entries are written from what was said, and the setting
+removed exactly that.
+
+Prompt text and assistant replies are now always kept, still redacted.
+**A config that set it to `false` still loads, and the setting is ignored** —
+reports from the next run on include the words. The key disappears from the
+file the next time daybook writes it. To keep a day's words off disk entirely,
+there is no longer a switch for it.
+
+Measured on one real day: 32 sessions, 397 files, 870 MB, most of it subagent
+transcripts. It grows with distinct sessions, not with days, because an
+unchanged session is compared and skipped rather than copied again.
+
 ## v0.4.4
 
 ### `service install` proves the scheduler is running

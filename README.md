@@ -150,12 +150,45 @@ you, and write pictures of real screens into your reports folder. Redaction runs
 over text before it reaches disk and cannot run over a photograph. Leave both off
 and nothing ever leaves the machine.
 
-Redaction runs **before** anything is written: AWS keys, bearer tokens, GitHub
-tokens, private keys. Add your own patterns, or set
-`privacy.keep_raw_prompts: false` to keep the whole shape of your day and none
-of the words.
+Redaction runs **before** the report is written: private keys, AWS, Anthropic,
+OpenAI, Stripe, GitHub and Slack credentials, JWTs, passwords in URLs, bearer
+tokens and `SECRET=`/`PASSWORD=` lines. Built in and always on; add your own
+patterns under `privacy.redact`.
+
+**The transcript archive is the exception to redaction.** It keeps a
+byte-for-byte copy of each day's sessions, tool output included — see
+[Sessions](#sessions-for-other-systems). `daybook config set sessions.archive
+false` turns it off.
 
 Output is `0600`. Keep the folder private — it holds your prompt history.
+
+---
+
+## Sessions, for other systems
+
+Each day also writes `sessions/<date>.<machine>.json`: every Claude Code session
+active that day, with its session id, what it was for, how far its work got,
+and the command that resumes it.
+
+```json
+{
+  "sessionId": "fe1b2769-844f-4599-8d87-5ef6185fb09e",
+  "purpose": "Designing a per-day session index.",
+  "state": "local",
+  "live": "idle",
+  "resume": "cd '/Users/you/repo' && claude --resume fe1b2769-…",
+  "transcript": { "archive": "transcripts/-Users-you-repo/fe1b2769-….jsonl" }
+}
+```
+
+`state` is the report's own (`shipped`, `local`, `open`, `stale`), so the two
+never disagree. `live` says whether the conversation is worth picking back up:
+`active` in the last hour of the day, `idle` since, `dormant` past
+`stale_after`. `local` with `idle` is work committed, never pushed, and left.
+
+The transcripts themselves are copied byte for byte into `transcripts/` and
+recopied whenever they change, because Claude Code deletes its own after 30
+days. **That copy is not redacted.** [What that means](docs/privacy.md#the-transcript-archive).
 
 ---
 

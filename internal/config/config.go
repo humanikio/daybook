@@ -191,8 +191,20 @@ func (c Config) PreviewAllowsRepo(name string) bool {
 }
 
 type Privacy struct {
-	KeepRawPrompts bool        `yaml:"keep_raw_prompts"`
-	Redact         []Redaction `yaml:"redact"`
+	Redact []Redaction `yaml:"redact"`
+}
+
+// Sessions configures the per-day session index and the transcript archive.
+type Sessions struct {
+	// Archive keeps a byte-for-byte copy of every session active in a day's
+	// window under <output>/transcripts, recopied whenever the source differs.
+	//
+	// On by default because the source does not last: Claude Code deletes
+	// transcripts after cleanupPeriodDays, 30 unless changed, and the index
+	// pointing at a deleted file is worth nothing. The copy is NOT redacted —
+	// it is the whole conversation, tool output included — which is why it is
+	// switchable and why `daybook privacy` names it.
+	Archive bool `yaml:"archive"`
 }
 
 type Business struct {
@@ -209,6 +221,7 @@ type Config struct {
 	Narrate    Narrate    `yaml:"narrate"`
 	Privacy    Privacy    `yaml:"privacy"`
 	Preview    Preview    `yaml:"preview"`
+	Sessions   Sessions   `yaml:"sessions"`
 	Businesses []Business `yaml:"business"`
 
 	// path is where this config was read from. Not a yaml field.
@@ -287,15 +300,7 @@ func Default() Config {
 		Output:   Output{Root: "~/Desktop/daybook", NoRemote: "committed"},
 		Narrate:  Narrate{Enabled: false, Provider: "auto", Timeout: "5m", Concurrency: 3},
 		Preview:  Preview{Enabled: false, MaxPhotos: 6, PerCapability: 1, StartServers: false, OnSchedule: false, Timeout: "20m"},
-		Privacy: Privacy{
-			KeepRawPrompts: true,
-			Redact: []Redaction{
-				{Name: "aws-access-key", Pattern: `AKIA[0-9A-Z]{16}`},
-				{Name: "bearer-token", Pattern: `sk-[A-Za-z0-9_-]{20,}`},
-				{Name: "github-token", Pattern: `gh[pousr]_[A-Za-z0-9]{20,}`},
-				{Name: "private-key", Pattern: `-----BEGIN [A-Z ]*PRIVATE KEY-----`},
-			},
-		},
+		Sessions: Sessions{Archive: true},
 	}
 }
 
@@ -329,6 +334,7 @@ func Load(path string) (Config, error) {
 		if err := yaml.Unmarshal(b, &cfg); err != nil {
 			return cfg, fmt.Errorf("%s: %w", path, err)
 		}
+		cfg.Privacy.Redact = withoutLegacy(cfg.Privacy.Redact)
 	} else if !os.IsNotExist(err) {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
@@ -505,6 +511,10 @@ func (c Config) OutputsDir() string { return filepath.Join(c.OutputRoot(), "outp
 func (c Config) RawDir() string     { return filepath.Join(c.OutputRoot(), "raw") }
 func (c Config) StateDir() string   { return filepath.Join(c.OutputRoot(), "state") }
 
+// SessionsDir holds the per-day session index; TranscriptsDir the archive.
+func (c Config) SessionsDir() string    { return filepath.Join(c.OutputRoot(), "sessions") }
+func (c Config) TranscriptsDir() string { return filepath.Join(c.OutputRoot(), "transcripts") }
+
 // Machine names this machine in output filenames, so two machines writing to
 // one synced directory never collide on the same file.
 func (c Config) Machine() string {
@@ -628,28 +638,6 @@ func DetectAuthors() []string {
 	return out
 }
 
-// Redactor compiles the privacy patterns once.
-type Redactor struct{ pats []*regexp.Regexp }
-
-func (c Config) Redactor() *Redactor {
-	r := &Redactor{}
-	for _, p := range c.Privacy.Redact {
-		if re, err := regexp.Compile(p.Pattern); err == nil {
-			r.pats = append(r.pats, re)
-		}
-	}
-	return r
-}
-
-// Do replaces every match with a marker. It runs before anything reaches disk,
-// because prompts carry pasted secrets far more often than people expect.
-func (r *Redactor) Do(s string) string {
-	for _, re := range r.pats {
-		s = re.ReplaceAllString(s, "[redacted]")
-	}
-	return s
-}
-
 // ---- writing the config back out -------------------------------------------
 
 // Render writes the config file, comments and all.
@@ -728,13 +716,23 @@ func Render(cfg Config) []byte {
 	w("  timeout: %-11q # per agent turn, not for the whole run", cfg.Narrate.Timeout)
 	w("")
 	w("privacy:")
-	w("  # Redaction runs before anything reaches disk. Prompts carry pasted")
-	w("  # secrets far more often than people expect.")
-	w("  keep_raw_prompts: %v", cfg.Privacy.KeepRawPrompts)
-	w("  redact:")
+	w("  # Redaction runs before anything reaches disk. Built-in patterns always")
+	w("  # apply (`daybook privacy` lists them); these are ADDED to them. A group")
+	w("  # named secret replaces only that part: (?P<secret>...)")
+	if len(cfg.Privacy.Redact) == 0 {
+		w("  redact: []")
+	} else {
+		w("  redact:")
+	}
 	for _, r := range cfg.Privacy.Redact {
 		w("    - { name: %q, pattern: %q }", r.Name, r.Pattern)
 	}
+	w("")
+	w("sessions:")
+	w("  # A byte-for-byte copy of each day's sessions in <root>/transcripts, so")
+	w("  # the history outlives Claude Code's 30-day cleanup. NOT redacted: it is")
+	w("  # the whole conversation, tool output included.")
+	w("  archive: %v", cfg.Sessions.Archive)
 	w("")
 	w("# ── SCREENSHOTS ─────────────────────────────────────────────")
 	w("# Photographs where a new feature lives in the UI, so a teammate can")
