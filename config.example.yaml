@@ -78,14 +78,25 @@ preview:
   timeout: "20m"
 
 privacy:
-  # Redaction runs before anything reaches disk. Prompts carry pasted
-  # secrets far more often than people expect.
-  keep_raw_prompts: true
-  redact:
-    - { name: "aws-access-key", pattern: "AKIA[0-9A-Z]{16}" }
-    - { name: "bearer-token", pattern: "sk-[A-Za-z0-9_-]{20,}" }
-    - { name: "github-token", pattern: "gh[pousr]_[A-Za-z0-9]{20,}" }
-    - { name: "private-key", pattern: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }
+  # Redaction runs before anything reaches disk. Built-in patterns always
+  # apply — private keys, AWS, Anthropic/OpenAI, Stripe, GitHub, Slack, JWTs,
+  # URL passwords, bearer tokens, SECRET/TOKEN/PASSWORD env lines — and
+  # `daybook privacy` lists them. Patterns here are ADDED to those. A group
+  # named secret replaces only that part, keeping the context readable.
+  redact: []
+  # redact:
+  #   - { name: "acme-ticket", pattern: "ACME-[0-9]{6}" }
+  #   - { name: "internal-host", pattern: "https://(?P<secret>[a-z0-9-]+)\\.corp\\.example" }
+
+sessions:
+  # Every day writes sessions/<date>.<machine>.json: each Claude Code session
+  # active that day, its purpose, state, and the command to resume it.
+  #
+  # archive also keeps a byte-for-byte copy of each of those sessions in
+  # transcripts/, recopied whenever the source changes, because Claude Code
+  # deletes its own after 30 days. The copy is NOT redacted — it is the whole
+  # conversation, tool output included.
+  archive: true
 
 # Group repos into businesses for the shipped-to table. Optional.
 # business:

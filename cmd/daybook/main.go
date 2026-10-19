@@ -30,6 +30,7 @@ import (
 	"github.com/humanikio/daybook/internal/render"
 	"github.com/humanikio/daybook/internal/schedule"
 	"github.com/humanikio/daybook/internal/selfupdate"
+	"github.com/humanikio/daybook/internal/sessions"
 	"github.com/humanikio/daybook/internal/source"
 	"github.com/humanikio/daybook/internal/source/claudecode"
 	"github.com/humanikio/daybook/internal/svc"
@@ -316,11 +317,40 @@ func writeDay(cfg config.Config, day model.Day) error {
 			return err
 		}
 	}
+	if err := writeSessions(cfg, day); err != nil {
+		return err
+	}
 	st := loadLastRun(cfg)
 	st.WindowEnd = day.WindowEnd.Format(time.RFC3339)
 	st.Date = day.Date
 	st.Machine = day.Machine
 	return saveLastRun(cfg, st)
+}
+
+// writeSessions writes the day's session index and brings the transcript
+// archive up to date with it.
+//
+// Rewritten with the day every time rather than on scan alone, so a purpose
+// that narration improves reaches the index in the same write. An archive
+// failure is reported and does not fail the day: the report is already on disk
+// and is the thing that must not be lost.
+func writeSessions(cfg config.Config, day model.Day) error {
+	sd := sessions.Build(cfg, day)
+	b, err := json.MarshalIndent(sd, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(cfg.SessionsDir(), day.Date+"."+day.Machine+".json"), b); err != nil {
+		return err
+	}
+	res := sessions.Archive(cfg, sd)
+	if res.Copied > 0 {
+		fmt.Printf("archived %s into %s\n", plural(res.Copied, "changed transcript file", "changed transcript files"), cfg.TranscriptsDir())
+	}
+	for _, e := range res.Errors {
+		fmt.Fprintf(os.Stderr, "  ! %v\n", e)
+	}
+	return nil
 }
 
 // lastRun is what makes scan idempotent and catch-up free.

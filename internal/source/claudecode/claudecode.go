@@ -194,7 +194,7 @@ func (s Source) Streams(cfg config.Config, w source.Window) (source.Result, erro
 			if fi, err := os.Stat(f); err == nil && fi.ModTime().Before(w.Start) {
 				continue
 			}
-			st, n, ok := s.readOne(f, w, red, cfg.Privacy.KeepRawPrompts)
+			st, n, ok := s.readOne(f, w, red)
 			res.ParseErrors += n
 			if ok {
 				res.Streams = append(res.Streams, st)
@@ -209,7 +209,7 @@ func (s Source) Streams(cfg config.Config, w source.Window) (source.Result, erro
 // Two passes are avoided deliberately: the title arrives on its own record and
 // may land anywhere in the file, so it is captured as we go and applied at the
 // end rather than re-reading.
-func (s Source) readOne(path string, w source.Window, red *config.Redactor, keepPrompts bool) (model.Stream, int, bool) {
+func (s Source) readOne(path string, w source.Window, red *config.Redactor) (model.Stream, int, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return model.Stream{}, 0, false
@@ -217,12 +217,13 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 	defer f.Close()
 
 	st := model.Stream{
-		ID:      strings.TrimSuffix(filepath.Base(path), ".jsonl"),
-		Project: filepath.Base(filepath.Dir(path)),
-		Tools:   map[string]int{},
-		Files:   map[string]int{},
-		Dirs:    map[string]int{},
-		Repos:   map[string]int{},
+		ID:         strings.TrimSuffix(filepath.Base(path), ".jsonl"),
+		Project:    filepath.Base(filepath.Dir(path)),
+		Transcript: path,
+		Tools:      map[string]int{},
+		Files:      map[string]int{},
+		Dirs:       map[string]int{},
+		Repos:      map[string]int{},
 	}
 	buckets := map[int64]struct{}{}
 	var parseErrors int
@@ -303,7 +304,7 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 						continue
 					}
 					st.Failures++
-					if len(st.Failed) < 12 && keepPrompts {
+					if len(st.Failed) < 12 {
 						if t := squash(resultText(b.Content)); t != "" {
 							t = red.Do(clip(t, 300))
 							// Classified here rather than at render time: why a
@@ -324,11 +325,7 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 			if text = strings.TrimSpace(text); text == "" {
 				continue
 			}
-			if keepPrompts {
-				st.Prompts = append(st.Prompts, model.Prompt{At: ts, Text: red.Do(squash(text))})
-			} else {
-				st.Prompts = append(st.Prompts, model.Prompt{At: ts})
-			}
+			st.Prompts = append(st.Prompts, model.Prompt{At: ts, Text: red.Do(squash(text))})
 
 		case "assistant":
 			if r.Message == nil {
@@ -341,7 +338,7 @@ func (s Source) readOne(path string, w source.Window, red *config.Redactor, keep
 			for _, b := range blocks {
 				switch b.Type {
 				case "text":
-					if t := strings.TrimSpace(b.Text); t != "" && keepPrompts {
+					if t := strings.TrimSpace(b.Text); t != "" {
 						st.Notes = append(st.Notes, model.Note{At: ts, Text: red.Do(squash(t))})
 					}
 				case "tool_use":

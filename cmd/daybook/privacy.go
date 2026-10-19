@@ -10,6 +10,7 @@ import (
 
 	"github.com/humanikio/daybook/internal/config"
 	"github.com/humanikio/daybook/internal/egress"
+	"github.com/humanikio/daybook/internal/sessions"
 	"github.com/humanikio/daybook/internal/vcs"
 )
 
@@ -88,8 +89,26 @@ func cmdPrivacy(args []string) error {
 		fmt.Printf("           ! this looks like it is inside %s — it holds your prompt\n", s)
 		fmt.Printf("             history, so check whether you want it syncing\n")
 	}
-	if !cfg.Privacy.KeepRawPrompts {
-		fmt.Println("           prompt text is not stored — counts and commits only")
+	fmt.Printf("  Redact   %d built-in patterns", len(config.Builtin))
+	if n := len(cfg.Privacy.Redact); n > 0 {
+		fmt.Printf(" + %d of yours", n)
+	}
+	fmt.Println(", over prompts and replies before they reach disk:")
+	var names []string
+	for _, r := range append(append([]config.Redaction{}, config.Builtin...), cfg.Privacy.Redact...) {
+		names = append(names, r.Name)
+	}
+	for _, line := range wrapWords(names, 60) {
+		fmt.Printf("           %s\n", line)
+	}
+	// Named separately from redaction because it is not covered by it: the
+	// archive is Claude Code's own file, every byte, tool output included.
+	if sessions.Archiving(cfg) {
+		fmt.Printf("  Archive  %s\n", cfg.TranscriptsDir())
+		fmt.Println("           full transcripts, byte-for-byte — NOT redacted, tool output")
+		fmt.Println("           included. sessions.archive: false stops new copies")
+	} else {
+		fmt.Println("  Archive  off — transcripts are indexed by path, not copied")
 	}
 	fmt.Println()
 	fmt.Println("  docs/privacy.md has the detail. Every route above is checked")
@@ -190,4 +209,25 @@ func syncedRootFor(dir string) string {
 		}
 	}
 	return ""
+}
+
+// wrapWords joins names into lines no wider than width.
+func wrapWords(words []string, width int) []string {
+	var lines []string
+	cur := ""
+	for _, w := range words {
+		if cur != "" && len(cur)+2+len(w) > width {
+			lines = append(lines, cur+",")
+			cur = ""
+		}
+		if cur == "" {
+			cur = w
+		} else {
+			cur += ", " + w
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
 }

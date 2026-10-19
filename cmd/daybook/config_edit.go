@@ -46,8 +46,8 @@ func cmdConfigEdit(args []string) error {
 			{Label: "Formats", Value: describeFormats(cfg)},
 			{Label: "Narration", Value: describeNarration(cfg)},
 			{Label: "Window", Value: cfg.Window.Length},
-			{Label: "Keep prompts", Value: yesNo(cfg.Privacy.KeepRawPrompts)},
 			{Label: "Screenshots", Value: describePreview(cfg)},
+			{Label: "Archive sessions", Value: describeArchive(cfg)},
 		}
 
 		i := tui.Select("daybook settings", items, colour)
@@ -92,12 +92,14 @@ func cmdConfigEdit(args []string) error {
 		case 7:
 			cfg.Window.Length = tui.Prompt("how far back each run looks", cfg.Window.Length)
 		case 8:
-			cfg.Privacy.KeepRawPrompts = !cfg.Privacy.KeepRawPrompts
-			if !cfg.Privacy.KeepRawPrompts {
-				fmt.Println("  prompt text will no longer be stored — counts and commits still are")
-			}
-		case 9:
 			editPreview(&cfg)
+		case 9:
+			cfg.Sessions.Archive = !cfg.Sessions.Archive
+			if cfg.Sessions.Archive {
+				fmt.Printf("  each day's sessions are copied, unredacted, into %s\n", cfg.TranscriptsDir())
+			} else {
+				fmt.Println("  no new copies — the archive already written is left where it is")
+			}
 		}
 
 		if err := cfg.Validate(); err != nil {
@@ -317,6 +319,13 @@ func describePreview(cfg config.Config) string {
 		when = "nightly"
 	}
 	return fmt.Sprintf("on · %s · max %d · %s", where, cfg.Preview.MaxPhotos, when)
+}
+
+func describeArchive(cfg config.Config) string {
+	if !cfg.Sessions.Archive {
+		return "off"
+	}
+	return "on · byte-for-byte, unredacted"
 }
 
 func describeRoots(cfg config.Config) string {

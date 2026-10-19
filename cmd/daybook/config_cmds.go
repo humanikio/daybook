@@ -227,20 +227,20 @@ func cmdSchedule(args []string) error {
 // are lists, and would silently drift as the struct changes. A short list that
 // says no to everything else is easier to trust.
 var settable = map[string]func(*config.Config, string) error{
-	"narrate.enabled":          func(c *config.Config, v string) error { return setBool(&c.Narrate.Enabled, v) },
-	"narrate.provider":         func(c *config.Config, v string) error { c.Narrate.Provider = v; return nil },
-	"narrate.model":            func(c *config.Config, v string) error { c.Narrate.Model = v; return nil },
-	"narrate.effort":           func(c *config.Config, v string) error { c.Narrate.Effort = v; return nil },
-	"narrate.timeout":          func(c *config.Config, v string) error { c.Narrate.Timeout = v; return nil },
-	"window.length":            func(c *config.Config, v string) error { c.Window.Length = v; return nil },
-	"window.scope":             func(c *config.Config, v string) error { c.Window.Scope = v; return nil },
-	"window.stale_after":       func(c *config.Config, v string) error { c.Window.StaleAfter = v; return nil },
-	"watch.fetch":              func(c *config.Config, v string) error { return setBool(&c.Watch.Fetch, v) },
-	"output.root":              func(c *config.Config, v string) error { c.Output.Root = v; return nil },
-	"output.no_remote":         func(c *config.Config, v string) error { c.Output.NoRemote = v; return nil },
-	"identity.machine":         func(c *config.Config, v string) error { c.Identity.Machine = v; return nil },
-	"identity.authors":         func(c *config.Config, v string) error { c.Identity.Authors = splitCSV(v); return nil },
-	"privacy.keep_raw_prompts": func(c *config.Config, v string) error { return setBool(&c.Privacy.KeepRawPrompts, v) },
+	"narrate.enabled":    func(c *config.Config, v string) error { return setBool(&c.Narrate.Enabled, v) },
+	"narrate.provider":   func(c *config.Config, v string) error { c.Narrate.Provider = v; return nil },
+	"narrate.model":      func(c *config.Config, v string) error { c.Narrate.Model = v; return nil },
+	"narrate.effort":     func(c *config.Config, v string) error { c.Narrate.Effort = v; return nil },
+	"narrate.timeout":    func(c *config.Config, v string) error { c.Narrate.Timeout = v; return nil },
+	"window.length":      func(c *config.Config, v string) error { c.Window.Length = v; return nil },
+	"window.scope":       func(c *config.Config, v string) error { c.Window.Scope = v; return nil },
+	"window.stale_after": func(c *config.Config, v string) error { c.Window.StaleAfter = v; return nil },
+	"watch.fetch":        func(c *config.Config, v string) error { return setBool(&c.Watch.Fetch, v) },
+	"output.root":        func(c *config.Config, v string) error { c.Output.Root = v; return nil },
+	"output.no_remote":   func(c *config.Config, v string) error { c.Output.NoRemote = v; return nil },
+	"identity.machine":   func(c *config.Config, v string) error { c.Identity.Machine = v; return nil },
+	"identity.authors":   func(c *config.Config, v string) error { c.Identity.Authors = splitCSV(v); return nil },
+	"sessions.archive":   func(c *config.Config, v string) error { return setBool(&c.Sessions.Archive, v) },
 }
 
 func cmdConfig(args []string) error {
